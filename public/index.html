@@ -3,18 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akko Academy - Estilo Doodle</title>
+    <title>Akko Academy</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     
-    <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // =========================================================================
-        // ⚙️ PASSO 1: CONFIGURAÇÃO DO FIREBASE
+        // ⚙️ CONFIGURAÇÃO DO FIREBASE
         // =========================================================================
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
@@ -40,10 +39,19 @@
             }
         });
 
-        window.buyLink = "https://pay.hotmart.com/seu-link-aqui";
-
+        // =========================================================================
+        // 🛒 CONFIGURAÇÃO DO CHECKOUT CAKTO
+        // =========================================================================
+        
+        // 👇👇👇 COLE SEU LINK DA CAKTO AQUI EMBAIXO 👇👇👇
+        window.buyLink = "https://pay.cakto.com.br/97fsdky_686786"; 
+        
         window.goToCheckout = () => {
-            window.open(window.buyLink, '_blank');
+            if(window.buyLink.includes("SEU-CODIGO-AQUI")) {
+                alert("Configure o link da Cakto no código HTML (linha 48).");
+            } else {
+                window.open(window.buyLink, '_blank');
+            }
         }
 
         window.handleLogin = async (e) => {
@@ -161,7 +169,6 @@
 </head>
 <body class="font-sans">
 
-    <!-- Navbar -->
     <nav class="fixed w-full z-50 px-4 py-4 top-0">
         <div class="max-w-6xl mx-auto bg-white border-2 border-doodle-dark shadow-hard rounded-lg px-4 py-3 flex justify-between items-center transform -rotate-1 hover:rotate-0 transition-transform duration-300">
             <div class="flex items-center gap-2 font-comic text-3xl tracking-wide text-doodle-dark">
@@ -181,7 +188,6 @@
         </div>
     </nav>
 
-    <!-- Hero Section -->
     <section class="relative pt-40 pb-20 overflow-hidden min-h-screen flex flex-col justify-center">
         <div class="absolute inset-0 pointer-events-none z-0 overflow-hidden">
             <svg class="absolute top-32 left-10 w-32 h-32 text-doodle-pink animate-wiggle opacity-80" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M10 50 Q 25 25 40 50 T 70 50 T 100 50" /></svg>
@@ -189,7 +195,6 @@
         </div>
 
         <div class="max-w-6xl mx-auto px-4 relative z-10 grid md:grid-cols-2 gap-12 items-center">
-            <!-- Texto Hero -->
             <div class="text-left relative">
                 <div class="inline-block bg-doodle-pink border-2 border-doodle-dark p-1 shadow-hard transform -rotate-3 mb-6">
                     <div class="border border-white border-dashed p-2">
@@ -217,12 +222,11 @@
                 </div>
             </div>
 
-            <!-- Card Hero -->
             <div class="relative group">
                 <div class="tape tape-tc z-30"></div>
                 <div class="bg-white p-4 border-4 border-doodle-dark shadow-[15px_15px_0px_#FF66C4] transform rotate-3 group-hover:rotate-1 transition-all duration-300 relative z-20">
                     <div class="bg-doodle-dark aspect-video w-full relative overflow-hidden border-2 border-doodle-dark">
-                        <img src="https://images.unsplash.com/photo-1622737133809-d95047b9e673?q=80&w=2600&auto=format&fit=crop" class="w-full h-full object-cover opacity-90 mix-blend-luminosity hover:mix-blend-normal transition-all" alt="Interface">
+                        <img src="https://images.unsplash.com/photo-1536240478700-b869070f9279?q=80&w=2600&auto=format&fit=crop" class="w-full h-full object-cover opacity-90 mix-blend-luminosity hover:mix-blend-normal transition-all" alt="Interface">
                         <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 group-hover:scale-110 transition-transform cursor-pointer">
                             <svg width="80" height="80" viewBox="0 0 100 100">
                                 <circle cx="50" cy="50" r="45" fill="#F2E058" stroke="#2D2B38" stroke-width="4"/>
@@ -242,7 +246,6 @@
         </div>
     </section>
 
-    <!-- Marquee Tape -->
     <div class="bg-doodle-yellow border-y-4 border-doodle-dark py-3 transform -rotate-1 scale-105 shadow-md relative z-20 overflow-hidden flex">
         <div class="flex gap-8 animate-scroll-text whitespace-nowrap font-comic text-3xl text-doodle-dark items-center flex-shrink-0 min-w-full justify-around px-8">
             <span>⚡ EDIT TIMING</span><span>★ PREMIERE PRO</span><span>⚡ AFTER EFFECTS</span><span>★ COLOR GRADING</span><span>⚡ SOUND DESIGN</span>
@@ -256,7 +259,6 @@
         </div>
     </div>
 
-    <!-- MENTORES (Squad) -->
     <section id="mentor" class="py-24 bg-doodle-purple relative border-t-4 border-doodle-dark">
         <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#fff 2px, transparent 2px); background-size: 20px 20px;"></div>
 
@@ -266,11 +268,10 @@
             </h2>
 
             <div class="grid md:grid-cols-3 gap-8">
-                <!-- Alexandre -->
                 <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform rotate-2 relative group hover:-translate-y-2 transition-transform">
                     <div class="tape tape-tc"></div>
                     <div class="aspect-square bg-gray-200 mb-4 border-2 border-doodle-dark overflow-hidden relative">
-                        <img src="IMAGEM AQUI" class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all">
+                        <img src="https://ui-avatars.com/api/?name=Payliny&background=6C5DD3&color=fff&size=256" class="w-full h-full object-cover">
                     </div>
                     <h3 class="font-comic text-3xl text-doodle-dark">Payliny</h3>
                     <p class="font-marker text-doodle-purple">Camera</p>
@@ -279,11 +280,10 @@
                     </div>
                 </div>
 
-                <!-- Bruno -->
                 <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform -rotate-1 relative group hover:-translate-y-2 transition-transform z-10">
                     <div class="tape tape-tr bg-doodle-pink"></div>
                     <div class="aspect-square bg-gray-200 mb-4 border-2 border-doodle-dark overflow-hidden">
-                        <img src="IMAGEM AQUI" class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all">
+                         <img src="https://ui-avatars.com/api/?name=Scroll&background=FF66C4&color=fff&size=256" class="w-full h-full object-cover">
                     </div>
                     <h3 class="font-comic text-3xl text-doodle-dark">Scroll</h3>
                     <p class="font-marker text-doodle-pink">Composicao</p>
@@ -292,11 +292,10 @@
                     </div>
                 </div>
 
-                <!-- Sarah -->
                 <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform rotate-3 relative group hover:-translate-y-2 transition-transform">
                     <div class="tape tape-tl bg-doodle-green"></div>
                     <div class="aspect-square bg-gray-200 mb-4 border-2 border-doodle-dark overflow-hidden">
-                        <img src="IMAGEM AQUI" class="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all">
+                         <img src="https://ui-avatars.com/api/?name=Sender&background=89F279&color=2D2B38&size=256" class="w-full h-full object-cover">
                     </div>
                     <h3 class="font-comic text-3xl text-doodle-dark">Sender</h3>
                     <p class="font-marker text-doodle-green">Correcao De Cor</p>
@@ -308,13 +307,11 @@
         </div>
     </section>
 
-    <!-- Módulos (Bento Grid Doodle) -->
     <section id="modulos" class="py-24 bg-white relative">
         <div class="max-w-6xl mx-auto px-4 relative z-10">
             <h2 class="font-comic text-5xl text-doodle-dark mb-12 text-center transform -rotate-1">O QUE VAI APRENDER</h2>
 
             <div class="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-6 h-auto md:h-[600px]">
-                <!-- Box 1 - Principal -->
                 <div class="md:col-span-2 md:row-span-2 bg-doodle-paper rounded-none p-8 border-4 border-doodle-dark shadow-hard flex flex-col justify-between relative overflow-hidden transform rotate-1 hover:rotate-0 transition-transform">
                     <div class="tape tape-tc bg-doodle-pink"></div>
                     <div class="absolute top-0 right-0 p-8 opacity-10">
@@ -330,19 +327,16 @@
                     </div>
                 </div>
 
-                <!-- Box 2 -->
                 <div class="bg-doodle-dark text-white p-6 border-4 border-doodle-dark shadow-hard transform -rotate-2 hover:rotate-0 transition-transform flex flex-col justify-between">
                     <i data-lucide="palette" class="w-10 h-10 text-doodle-pink mb-4"></i>
                     <h3 class="font-comic text-2xl">COLOR GRADING</h3>
                 </div>
 
-                <!-- Box 3 -->
                 <div class="bg-doodle-green p-6 border-4 border-doodle-dark shadow-hard transform rotate-2 hover:rotate-0 transition-transform flex flex-col justify-between">
                     <i data-lucide="music" class="w-10 h-10 text-doodle-dark mb-4"></i>
                     <h3 class="font-comic text-2xl text-doodle-dark">SOUND DESIGN</h3>
                 </div>
 
-                <!-- Box 4 -->
                 <div class="md:col-span-2 bg-doodle-purple p-6 border-4 border-doodle-dark shadow-hard transform -rotate-1 hover:rotate-0 transition-transform flex items-center justify-between text-white">
                     <div>
                         <h3 class="font-comic text-3xl">MERCADO & CARREIRA</h3>
@@ -354,13 +348,11 @@
         </div>
     </section>
 
-    <!-- Depoimentos (Resultados) -->
     <section class="py-24 bg-doodle-paper border-t-4 border-doodle-dark relative">
         <div class="max-w-6xl mx-auto px-4">
             <h2 class="font-comic text-5xl text-doodle-dark mb-16 text-center">QUEM JÁ FEZ</h2>
             
             <div class="grid md:grid-cols-3 gap-8">
-                <!-- Depoimento 1 -->
                 <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform rotate-1">
                     <div class="flex gap-1 text-doodle-yellow mb-4">
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
@@ -369,17 +361,16 @@
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
                     </div>
-                    <p class="font-marker text-gray-600 mb-6">"1"</p>
+                    <p class="font-marker text-gray-600 mb-6">"Melhor curso que já fiz, a didática é direta e os efeitos ensinados são insanos!"</p>
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 bg-doodle-dark rounded-full border-2 border-doodle-dark"></div>
+                        <img src="https://ui-avatars.com/api/?name=User+One&background=2D2B38&color=fff" class="w-10 h-10 rounded-full border-2 border-doodle-dark">
                         <div>
-                            <p class="font-comic text-xl text-doodle-dark leading-none">A</p>
-                            <p class="text-xs font-sans font-bold text-doodle-purple">3</p>
+                            <p class="font-comic text-xl text-doodle-dark leading-none">João Silva</p>
+                            <p class="text-xs font-sans font-bold text-doodle-purple">Aluno</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Depoimento 2 -->
                 <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform -rotate-2 mt-4 md:mt-0">
                     <div class="flex gap-1 text-doodle-yellow mb-4">
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
@@ -388,17 +379,16 @@
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
                     </div>
-                    <p class="font-marker text-gray-600 mb-6">"1"</p>
+                    <p class="font-marker text-gray-600 mb-6">"Comecei a pegar clientes pagando 3x mais depois que apliquei as técnicas do módulo 3."</p>
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 bg-doodle-pink rounded-full border-2 border-doodle-dark"></div>
+                        <img src="https://ui-avatars.com/api/?name=User+Two&background=FF66C4&color=fff" class="w-10 h-10 rounded-full border-2 border-doodle-dark">
                         <div>
-                            <p class="font-comic text-xl text-doodle-dark leading-none">A</p>
-                            <p class="text-xs font-sans font-bold text-doodle-purple">3</p>
+                            <p class="font-comic text-xl text-doodle-dark leading-none">Maria E.</p>
+                            <p class="text-xs font-sans font-bold text-doodle-purple">Aluna</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- Depoimento 3 -->
                 <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform rotate-1">
                     <div class="flex gap-1 text-doodle-yellow mb-4">
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
@@ -407,12 +397,12 @@
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
                         <i data-lucide="star" class="w-5 h-5 fill-current"></i>
                     </div>
-                    <p class="font-marker text-gray-600 mb-6">"1"</p>
+                    <p class="font-marker text-gray-600 mb-6">"Simplesmente foda. O estilo de edição que ensinam aqui não tem em lugar nenhum."</p>
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 bg-doodle-green rounded-full border-2 border-doodle-dark"></div>
+                        <img src="https://ui-avatars.com/api/?name=User+Three&background=89F279&color=2D2B38" class="w-10 h-10 rounded-full border-2 border-doodle-dark">
                         <div>
-                            <p class="font-comic text-xl text-doodle-dark leading-none">A</p>
-                            <p class="text-xs font-sans font-bold text-doodle-purple">3</p>
+                            <p class="font-comic text-xl text-doodle-dark leading-none">Pedro K.</p>
+                            <p class="text-xs font-sans font-bold text-doodle-purple">Aluno</p>
                         </div>
                     </div>
                 </div>
@@ -420,7 +410,6 @@
         </div>
     </section>
 
-    <!-- Pricing Section -->
     <section id="oferta" class="py-24 relative overflow-hidden">
         <div class="max-w-4xl mx-auto px-4 relative z-10">
             <div class="bg-white border-4 border-doodle-dark shadow-[20px_20px_0px_#2D2B38] relative transform rotate-1">
@@ -435,7 +424,7 @@
                     <div class="w-full md:w-1/2 p-8 bg-doodle-paper border-b-4 md:border-b-0 md:border-r-4 border-doodle-dark border-dashed">
                         <h3 class="font-marker text-2xl mb-6 text-doodle-pink transform -rotate-2">ACESSO IMEDIATO:</h3>
                         <ul class="space-y-4 font-bold text-doodle-dark font-comic text-xl">
-                            <li class="flex items-center gap-3"><div class="w-6 h-6 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-xs">✔</div> Login enviado por E-mail</li>
+                            <li class="flex items-center gap-3"><div class="w-6 h-6 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-xs">✔</div> Login enviado por E-mail (Cakto)</li>
                             <li class="flex items-center gap-3"><div class="w-6 h-6 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-xs">✔</div> Pack de Assets Doodle</li>
                             <li class="flex items-center gap-3"><div class="w-6 h-6 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-xs">✔</div> Certificado Oficial</li>
                         </ul>
@@ -452,7 +441,7 @@
                         <div class="font-comic text-7xl text-doodle-dark my-2 tracking-tight transform -rotate-3">
                             R$ 197,99
                         </div>
-                        <p class="text-doodle-purple font-marker text-lg mb-8">ou por uma coxinha</p>
+                        <p class="text-doodle-purple font-marker text-lg mb-8">ou 12x no cartão</p>
                         
                         <button onclick="goToCheckout()" class="btn-doodle w-full bg-doodle-yellow text-doodle-dark font-comic text-3xl py-4 rounded border-2 border-doodle-dark hover:bg-white transition-colors transform hover:-rotate-1 relative group">
                             COMPRAR AGORA
@@ -464,7 +453,6 @@
         </div>
     </section>
 
-    <!-- Footer -->
     <footer class="bg-doodle-dark text-white py-12 border-t-4 border-doodle-pink relative overflow-hidden">
         <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#fff 2px, transparent 2px); background-size: 30px 30px;"></div>
         <div class="max-w-6xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-6 relative z-10">
@@ -476,7 +464,6 @@
         </div>
     </footer>
 
-    <!-- LOGIN MODAL -->
     <div id="login-modal" class="fixed inset-0 z-[100] modal flex items-center justify-center">
         <div class="absolute inset-0 bg-doodle-dark/80 backdrop-blur-sm" onclick="toggleLoginModal()"></div>
         <div class="modal-content relative bg-doodle-yellow w-full max-w-sm p-8 shadow-[10px_10px_0px_#2D2B38] border-4 border-doodle-dark transform rotate-2">
