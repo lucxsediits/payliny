@@ -35,10 +35,39 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        
         // =========================================================================
+        // 📦 DADOS DOS PRODUTOS EXTRAS (LOJA)
+        // =========================================================================
+        const extraProducts = [
+            { 
+                id: 'pack-edit', 
+                title: 'PACK DE EDIÇÃO ULTIMATE', 
+                desc: 'Presets, Transições e SFX',
+                icon: 'package', 
+                price: 'R$ 47,90',
+                link: '#' // Coloque seu link de checkout aqui
+            },
+            { 
+                id: 'mmv-pc', 
+                title: 'CURSO MMV (PC)', 
+                desc: 'After Effects Masterclass',
+                icon: 'monitor', 
+                price: 'R$ 97,90',
+                link: '#' 
+            },
+            { 
+                id: 'mmv-mobile', 
+                title: 'CURSO MMV (MOBILE)', 
+                desc: 'Alight Motion & CapCut',
+                icon: 'smartphone', 
+                price: 'R$ 57,90',
+                link: '#' 
+            }
+        ];
 
         let currentLessons = [];
-        let completedLessonIds = new Set(); // Armazena IDs das aulas feitas
+        let completedLessonIds = new Set(); 
         let currentLessonIndex = -1;
         let currentUser = null;
 
@@ -66,9 +95,7 @@
                     uid: user.uid.substring(0, 6).toUpperCase()
                 };
 
-                // 1. Carregar Aulas (Público)
                 loadLessons();
-                // 2. Carregar Progresso do Usuário (Privado)
                 loadUserProgress(user.uid);
             }
         });
@@ -82,14 +109,11 @@
                 const lessons = [];
                 snapshot.forEach((doc) => lessons.push({ id: doc.id, ...doc.data() }));
                 
-                // Ordenar por data de criação
                 lessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
                 
                 currentLessons = lessons;
-                updateUI(); // Atualiza tudo
+                updateUI(); 
                 
-                // MUDANÇA AQUI: Não carrega a aula 0 automaticamente.
-                // Se não houver aula selecionada (-1) e houver aulas disponíveis, mostra a tela de boas-vindas.
                 if (lessons.length > 0 && currentLessonIndex === -1) {
                     showSelectLessonState();
                 } else if (lessons.length === 0) {
@@ -128,16 +152,24 @@
 
         function renderSidebar() {
             const sidebarContent = document.getElementById('sidebar-content');
-            // Salva o estado dos detalhes abertos para não fechar ao atualizar
             const openDetails = Array.from(sidebarContent.querySelectorAll('details[open]')).map(d => d.id);
             
             sidebarContent.innerHTML = '';
 
+            // --- SEÇÃO 1: AULAS DO CURSO ATUAL ---
             const modules = {};
             currentLessons.forEach((lesson, index) => {
                 if (!modules[lesson.moduleName]) modules[lesson.moduleName] = [];
                 modules[lesson.moduleName].push({ ...lesson, originalIndex: index });
             });
+
+            if (Object.keys(modules).length > 0) {
+                // Título da seção
+                const sectionTitle = document.createElement('div');
+                sectionTitle.className = "px-2 py-3 font-marker text-doodle-purple text-lg transform -rotate-1 border-b-2 border-dashed border-doodle-dark/30 mb-2 mt-2";
+                sectionTitle.innerText = "MEUS MÓDULOS";
+                sidebarContent.appendChild(sectionTitle);
+            }
 
             Object.keys(modules).forEach((moduleName, modIndex) => {
                 const detailsId = `module-${modIndex}`;
@@ -145,7 +177,6 @@
                 details.id = detailsId;
                 details.className = 'group';
                 
-                // Mantém aberto se estava antes ou se é o primeiro
                 if(modIndex === 0 || openDetails.includes(detailsId)) details.setAttribute('open', '');
 
                 details.innerHTML = `
@@ -195,10 +226,47 @@
                 });
                 sidebarContent.appendChild(details);
             });
+
+            // --- SEÇÃO 2: PRODUTOS EXTRAS (LOJA) ---
+            
+            const storeTitle = document.createElement('div');
+            storeTitle.className = "px-2 py-3 font-marker text-doodle-pink text-lg transform rotate-1 border-t-4 border-doodle-dark mt-8 mb-4 bg-doodle-dark/5";
+            storeTitle.innerHTML = "⚡ TURBINE SUA EDIÇÃO";
+            sidebarContent.appendChild(storeTitle);
+
+            extraProducts.forEach(prod => {
+                const prodBtn = document.createElement('div');
+                prodBtn.className = "w-full flex flex-col p-3 mb-4 bg-gray-100 border-2 border-gray-300 hover:border-doodle-pink hover:bg-white transition-all cursor-pointer shadow-sm group relative opacity-90 hover:opacity-100";
+                prodBtn.onclick = () => openPurchaseModal(prod);
+
+                prodBtn.innerHTML = `
+                    <div class="absolute -top-3 -right-2 bg-doodle-pink text-white font-comic text-xs px-2 py-1 border-2 border-doodle-dark transform rotate-3 shadow-sm z-10">
+                        ${prod.price}
+                    </div>
+                    <div class="flex items-center gap-3 mb-1">
+                        <div class="w-10 h-10 bg-doodle-dark rounded-full flex items-center justify-center text-white border-2 border-gray-400 group-hover:border-doodle-pink group-hover:bg-doodle-pink transition-colors">
+                            <i data-lucide="${prod.icon}" class="w-5 h-5"></i>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-comic text-lg text-doodle-dark leading-none group-hover:text-doodle-pink">${prod.title}</h4>
+                            <p class="font-sans text-xs text-gray-500 mt-1">${prod.desc}</p>
+                        </div>
+                        <i data-lucide="lock" class="w-5 h-5 text-gray-400 group-hover:text-doodle-pink"></i>
+                    </div>
+                `;
+                sidebarContent.appendChild(prodBtn);
+            });
+
             lucide.createIcons();
         }
 
-        // --- CONTROLE DE AULA ---
+        // --- CONTROLE DE AULA E MODAL ---
+
+        window.openPurchaseModal = (product) => {
+            if(confirm(`Você deseja ir para a página de compra do ${product.title} por ${product.price}?`)) {
+                // window.open(product.link, '_blank'); // Descomente para funcionar o link real
+            }
+        };
 
         window.loadLesson = function(index) {
             if (!currentLessons[index]) return;
@@ -210,7 +278,6 @@
             document.getElementById('module-bread').innerText = lesson.moduleName;
             document.getElementById('lesson-bread').innerText = lesson.title;
 
-            // Mostra o botão de conclusão (caso estivesse oculto pela tela de boas-vindas)
             const btn = document.getElementById('btn-mark-completed');
             if(btn) btn.style.display = 'flex';
 
@@ -248,7 +315,6 @@
              document.getElementById('module-bread').innerText = "Área de Membros";
              document.getElementById('lesson-bread').innerText = "Início";
              
-             // Oculta o botão "Marcar como Feito" pois não tem aula ativa
              const btn = document.getElementById('btn-mark-completed');
              if(btn) btn.style.display = 'none';
 
@@ -419,6 +485,8 @@
             const scrubber = document.getElementById('scrubber');
             const currentEl = document.getElementById('current-time');
             const durationEl = document.getElementById('duration');
+
+            if (!video) return;
 
             video.addEventListener('timeupdate', () => {
                 const percent = (video.currentTime / video.duration) * 100;
