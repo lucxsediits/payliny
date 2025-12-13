@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akko Academy - Suite de Testes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // =========================================================================
+        // ⚙️ CONFIGURAÇÃO DO FIREBASE (COLE AQUI A MESMA DO ADMIN)
+        // =========================================================================
+        const manualConfig = {
+          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+          authDomain: "akko-academy.firebaseapp.com",
+          projectId: "akko-academy",
+          storageBucket: "akko-academy.firebasestorage.app",
+          messagingSenderId: "56272587692",
+          appId: "1:56272587692:web:6e62374b91269073784809"
+        };
+
+        const firebaseConfig = manualConfig.apiKey 
+            ? manualConfig 
+            : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Autenticação anónima para ter permissão de escrita
+        signInAnonymously(auth);
+
+        // --- 1. GERAR DADOS FICTÍCIOS ---
+        const firstNames = ["Ana", "Bruno", "Carlos", "Diana", "Eduardo", "Fernanda", "Gabriel", "Helena"];
+        const lastNames = ["Silva", "Santos", "Oliveira", "Souza", "Pereira", "Costa", "Ferreira"];
+
+        window.generateData = async () => {
+            const btn = document.getElementById('btn-generate');
+            const log = document.getElementById('log-generate');
+            btn.disabled = true;
+            btn.innerText = "A GERAR...";
+            log.innerHTML = "";
+
+            try {
+                for (let i = 0; i < 5; i++) {
+                    const name = `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
+                    const email = `aluno.teste.${Math.floor(Math.random() * 1000)}@exemplo.com`;
+                    
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
+                        name: name,
+                        email: email,
+                        uid: "simulated_uid_" + Date.now(),
+                        createdAt: serverTimestamp()
+                    });
+                    
+                    log.innerHTML += `<div class="text-green-600 text-xs">✔ Criado: ${name}</div>`;
+                }
+                log.innerHTML += `<div class="text-doodle-dark font-bold mt-2">✅ Concluído! Atualize o Admin.</div>`;
+            } catch (error) {
+                console.error(error);
+                log.innerHTML += `<div class="text-red-500 font-bold">Erro: ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "GERAR 5 ALUNOS";
+            }
+        };
+
+        // --- 2. TESTAR WEBHOOK REAL ---
+        window.testWebhook = async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('webhook-url').value;
+            const email = document.getElementById('webhook-email').value;
+            const name = document.getElementById('webhook-name').value;
+            const log = document.getElementById('log-webhook');
+            const btn = document.getElementById('btn-webhook');
+
+            if(!url) {
+                alert("Cole a URL da sua Cloud Function primeiro!");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "A ENVIAR...";
+            log.innerHTML = "A enviar pedido POST para o servidor...";
+
+            try {
+                // Simula o payload que a Cakto/Hotmart envia
+                const payload = {
+                    client: {
+                        name: name,
+                        email: email
+                    },
+                    event: "purchase_approved"
+                };
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const text = await response.text();
+
+                if (response.ok) {
+                    log.innerHTML = `
+                        <div class="bg-green-100 border border-green-500 text-green-800 p-2 rounded mt-2 text-xs">
+                            <strong>SUCESSO (200 OK)</strong><br>
+                            O servidor aceitou a venda.<br>
+                            Verifique o email <em>${email}</em> (e a caixa de spam).
+                        </div>
+                    `;
+                } else {
+                    log.innerHTML = `
+                        <div class="bg-red-100 border border-red-500 text-red-800 p-2 rounded mt-2 text-xs">
+                            <strong>ERRO (${response.status})</strong><br>
+                            ${text}
+                        </div>
+                    `;
+                }
+
+            } catch (error) {
+                log.innerHTML = `<div class="text-red-600">Erro de Rede: ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "DISPARAR WEBHOOK";
+            }
+        };
+    </script>
+
+    <style>
+        body {
+            background-color: #2D2B38;
+            background-image: radial-gradient(#3E3B4B 2px, transparent 2px);
+            background-size: 20px 20px;
+            color: #2D2B38;
+        }
+        .panel {
+            background: #F8F9FD;
+            box-shadow: 8px 8px 0px #000;
+            border: 3px solid #000;
+        }
+        .btn-action {
+            border: 2px solid #000;
+            box-shadow: 4px 4px 0px #000;
+            transition: all 0.1s;
+        }
+        .btn-action:active {
+            transform: translate(2px, 2px);
+            box-shadow: 0px 0px 0px #000;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 font-sans">
+
+    <div class="max-w-4xl w-full grid md:grid-cols-2 gap-8">
+        
+        <!-- HEADER -->
+        <div class="col-span-1 md:col-span-2 text-center mb-4">
+            <h1 class="font-comic text-5xl text-doodle-yellow text-stroke-black mb-2" style="-webkit-text-stroke: 1.5px #000;">
+                LABORATÓRIO DE TESTES
+            </h1>
+            <p class="text-white font-marker opacity-80">Use esta ferramenta para popular o banco e testar integrações.</p>
+        </div>
+
+        <!-- PAINEL 1: POPULAR BANCO -->
+        <div class="panel p-6 relative transform -rotate-1">
+            <div class="absolute -top-4 -left-4 bg-doodle-green border-2 border-black px-3 py-1 font-comic text-black shadow-sm">
+                1. TESTAR LISTA DE ALUNOS
+            </div>
+            
+            <p class="text-sm mb-4 mt-2">
+                Isto vai criar 5 alunos falsos diretamente no Firestore para que a lista na página <strong>admin.html</strong> deixe de estar vazia.
+            </p>
+
+            <button id="btn-generate" onclick="generateData()" class="btn-action w-full bg-doodle-purple text-white font-comic text-xl py-3 hover:bg-doodle-pink">
+                GERAR 5 ALUNOS
+            </button>
+
+            <div id="log-generate" class="mt-4 space-y-1 max-h-32 overflow-y-auto bg-gray-100 p-2 border border-gray-300 rounded font-mono text-xs">
+                A aguardar comando...
+            </div>
+        </div>
+
+        <!-- PAINEL 2: TESTAR WEBHOOK -->
+        <div class="panel p-6 relative transform rotate-1">
+            <div class="absolute -top-4 -right-4 bg-doodle-yellow border-2 border-black px-3 py-1 font-comic text-black shadow-sm">
+                2. TESTAR EMAIL AUTOMÁTICO
+            </div>
+
+            <p class="text-sm mb-4 mt-2">
+                Simula uma venda da Cakto. Requer que tenhas feito o <code>firebase deploy</code> e tenhas a URL da função.
+            </p>
+
+            <form onsubmit="testWebhook(event)" class="space-y-3">
+                <div>
+                    <label class="font-bold text-xs">URL DA CLOUD FUNCTION</label>
+                    <input type="url" id="webhook-url" class="w-full border-2 border-black p-2 text-xs" placeholder="https://us-central1-....cloudfunctions.net/handleNewSale" required>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="font-bold text-xs">NOME TESTE</label>
+                        <input type="text" id="webhook-name" value="Aluno Teste Webhook" class="w-full border-2 border-black p-2 text-xs" required>
+                    </div>
+                    <div>
+                        <label class="font-bold text-xs">EMAIL TESTE</label>
+                        <input type="email" id="webhook-email" class="w-full border-2 border-black p-2 text-xs" placeholder="teu@email.com" required>
+                    </div>
+                </div>
+                <button type="submit" id="btn-webhook" class="btn-action w-full bg-doodle-green text-black font-comic text-xl py-3 hover:bg-white">
+                    DISPARAR WEBHOOK
+                </button>
+            </form>
+
+            <div id="log-webhook" class="mt-4 bg-gray-100 p-2 border border-gray-300 rounded font-mono text-xs h-20 overflow-y-auto">
+                Logs da resposta aparecerão aqui...
+            </div>
+        </div>
+
+        <!-- Links Úteis -->
+        <div class="col-span-1 md:col-span-2 text-center mt-8">
+            <a href="admin.html" class="inline-block bg-white text-black font-comic text-xl px-6 py-2 border-2 border-black shadow-[4px_4px_0px_#fff] hover:translate-y-1 hover:shadow-none transition-all">
+                VOLTAR AO ADMIN ->
+            </a>
+        </div>
+
+    </div>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        comic: ['Bangers', 'cursive'],
+                        marker: ['Permanent Marker', 'cursive'],
+                    },
+                    colors: {
+                        doodle: {
+                            pink: '#FF66C4', green: '#89F279', yellow: '#F2E058', purple: '#6C5DD3'
+                        }
+                    }
+                }
+            }
+        }
+        lucide.createIcons();
+    </script>
+</body>
+</html>
