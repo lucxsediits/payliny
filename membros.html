@@ -14,6 +14,9 @@
         import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
+        // =========================================================================
+        // ⚙️ PASSO 1: CONFIGURAÇÃO DO FIREBASE
+        // =========================================================================
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
           authDomain: "akko-academy.firebaseapp.com",
@@ -85,9 +88,10 @@
                 currentLessons = lessons;
                 updateUI(); // Atualiza tudo
                 
-                // Carrega a primeira aula se nenhuma estiver ativa
+                // MUDANÇA AQUI: Não carrega a aula 0 automaticamente.
+                // Se não houver aula selecionada (-1) e houver aulas disponíveis, mostra a tela de boas-vindas.
                 if (lessons.length > 0 && currentLessonIndex === -1) {
-                    loadLesson(0);
+                    showSelectLessonState();
                 } else if (lessons.length === 0) {
                     showEmptyState();
                 }
@@ -95,15 +99,12 @@
         }
 
         function loadUserProgress(userId) {
-            // Escuta a subcoleção 'progress' dentro do documento do usuário
             const progressRef = collection(db, 'artifacts', appId, 'users', userId, 'progress');
-            
             onSnapshot(progressRef, (snapshot) => {
                 completedLessonIds.clear();
                 snapshot.forEach(doc => completedLessonIds.add(doc.id));
-                
-                updateUI(); // Re-renderiza a sidebar e a barra de progresso
-                updateCurrentLessonButtonState(); // Atualiza o botão da aula atual
+                updateUI();
+                updateCurrentLessonButtonState();
             });
         }
 
@@ -116,10 +117,8 @@
 
         function updateProgressBar() {
             if (currentLessons.length === 0) return;
-            
             const total = currentLessons.length;
             const completed = completedLessonIds.size;
-            // Garante que não passa de 100% se houver lixo no banco
             const validCompleted = Math.min(completed, total); 
             const percentage = Math.round((validCompleted / total) * 100);
 
@@ -167,17 +166,14 @@
                     const isActive = lesson.originalIndex === currentLessonIndex;
                     const isCompleted = completedLessonIds.has(lesson.id);
                     
-                    // Estilo Base
                     let baseClass = "w-full text-left flex items-center gap-3 p-2 rounded border-b-2 border-transparent group transition-all lesson-btn";
                     
-                    // Estilo Ativo/Inativo
                     if (isActive) {
                         baseClass += " bg-doodle-yellow border-2 border-doodle-dark shadow-sm";
                     } else {
                         baseClass += " bg-white/50 hover:bg-doodle-yellow/50 hover:border-doodle-dark";
                     }
 
-                    // Ícone Checkbox (Visual)
                     const checkColor = isCompleted ? 'bg-doodle-green' : 'bg-white';
                     const checkIcon = isCompleted ? '' : 'hidden';
                     const rotate = isCompleted ? 'rotate-[-5deg]' : '';
@@ -214,12 +210,15 @@
             document.getElementById('module-bread').innerText = lesson.moduleName;
             document.getElementById('lesson-bread').innerText = lesson.title;
 
+            // Mostra o botão de conclusão (caso estivesse oculto pela tela de boas-vindas)
+            const btn = document.getElementById('btn-mark-completed');
+            if(btn) btn.style.display = 'flex';
+
             updateCurrentLessonButtonState();
-            renderSidebar(); // Para atualizar o highlight da aula ativa
+            renderSidebar(); 
 
             const playerContainer = document.getElementById('video-player-container');
             
-            // Tratamento de URL do Vídeo
             if (lesson.videoUrl.includes('youtube') || lesson.videoUrl.includes('youtu.be')) {
                 let videoId = lesson.videoUrl.split('v=')[1];
                 const ampersandPosition = videoId ? videoId.indexOf('&') : -1;
@@ -229,7 +228,7 @@
                 playerContainer.innerHTML = `
                     <div class="relative w-full h-full bg-black">
                         <iframe id="yt-player" width="100%" height="100%" src="https://www.youtube.com/embed/${videoId}?modestbranding=1&rel=0" frameborder="0" allowfullscreen></iframe>
-                        <div id="watermark-overlay" class="absolute pointer-events-none select-none font-marker text-white/20 text-xl z-50 transition-all duration-1000">
+                        <div id="watermark-overlay" class="absolute pointer-events-none select-none font-marker text-white/20 text-xl z-50 transition-all duration-1000" style="top: 10%; left: 10%;">
                             ${window.currentUserInfo.name} - ${window.currentUserInfo.uid}
                         </div>
                         <div class="absolute inset-0 z-40" oncontextmenu="return false;"></div>
@@ -241,7 +240,46 @@
             }
         }
 
-        // Atualiza o botão principal "Marcar como Feito"
+        // --- ESTADOS DE TELA ---
+
+        function showSelectLessonState() {
+             document.getElementById('lesson-title').innerText = "BEM-VINDO(A)!";
+             document.getElementById('lesson-desc').innerText = "Escolha um módulo e uma aula na barra lateral para começar os seus estudos.";
+             document.getElementById('module-bread').innerText = "Área de Membros";
+             document.getElementById('lesson-bread').innerText = "Início";
+             
+             // Oculta o botão "Marcar como Feito" pois não tem aula ativa
+             const btn = document.getElementById('btn-mark-completed');
+             if(btn) btn.style.display = 'none';
+
+             document.getElementById('video-player-container').innerHTML = `
+                <div class="w-full h-full flex flex-col items-center justify-center bg-doodle-dark text-white font-comic text-2xl p-8 text-center gap-4 relative overflow-hidden">
+                    <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#fff 2px, transparent 2px); background-size: 20px 20px;"></div>
+                    
+                    <div class="w-24 h-24 bg-doodle-purple border-4 border-doodle-dark rounded-full flex items-center justify-center shadow-hard hover:scale-110 transition-transform">
+                        <i data-lucide="mouse-pointer-2" class="w-10 h-10 text-white transform -rotate-12"></i>
+                    </div>
+                    
+                    <div class="z-10 mt-2">
+                        <p class="text-3xl text-doodle-yellow mb-2 transform -rotate-1">PRONTO PARA COMEÇAR?</p>
+                        <p class="font-sans text-base opacity-80 max-w-sm mx-auto">Selecione um módulo na lista à esquerda e clique na primeira aula!</p>
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        function showEmptyState() {
+             document.getElementById('video-player-container').innerHTML = `
+                <div class="w-full h-full flex flex-col items-center justify-center bg-doodle-dark text-white font-comic text-2xl p-8 text-center gap-4">
+                    <i data-lucide="ghost" class="w-16 h-16 opacity-50"></i>
+                    <span>NADA POR AQUI AINDA...</span>
+                    <span class="text-sm font-sans opacity-70">Aguarde o professor postar novas aulas!</span>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
         function updateCurrentLessonButtonState() {
             if (currentLessonIndex === -1) return;
             
@@ -265,22 +303,19 @@
             lucide.createIcons();
         }
 
-        // Ação do Botão Principal
         window.toggleCurrentLessonStatus = async () => {
             if (currentLessonIndex === -1 || !currentUser) return;
             
             const lesson = currentLessons[currentLessonIndex];
             const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'progress', lesson.id);
-
             const btn = document.getElementById('btn-mark-completed');
-            btn.classList.add('opacity-50', 'pointer-events-none'); // Disable temp
+            
+            btn.classList.add('opacity-50', 'pointer-events-none');
 
             try {
                 if (completedLessonIds.has(lesson.id)) {
-                    // Desmarcar (Deletar doc)
                     await deleteDoc(docRef);
                 } else {
-                    // Marcar (Criar doc)
                     await setDoc(docRef, {
                         completedAt: serverTimestamp(),
                         lessonTitle: lesson.title
@@ -288,10 +323,8 @@
                 }
             } catch (error) {
                 console.error("Erro ao salvar progresso:", error);
-                alert("Erro ao salvar. Tente novamente.");
             } finally {
                 btn.classList.remove('opacity-50', 'pointer-events-none');
-                // A UI atualiza automaticamente pelo onSnapshot do loadUserProgress
             }
         }
 
@@ -398,11 +431,6 @@
                 durationEl.innerText = formatTime(video.duration);
             });
 
-            // Auto-conclusão ao terminar o vídeo (Opcional)
-            video.addEventListener('ended', () => {
-                // Se quiser auto-completar: window.toggleCurrentLessonStatus();
-            });
-
             window.addEventListener('blur', () => {
                 if (!video.paused) window.togglePlay();
             });
@@ -426,17 +454,6 @@
                 wm.style.left = `${left}%`;
                 wm.style.opacity = (Math.random() * 0.3 + 0.1).toString();
             }, 3000);
-        }
-
-        function showEmptyState() {
-             document.getElementById('video-player-container').innerHTML = `
-                <div class="w-full h-full flex flex-col items-center justify-center bg-doodle-dark text-white font-comic text-2xl p-8 text-center gap-4">
-                    <i data-lucide="ghost" class="w-16 h-16 opacity-50"></i>
-                    <span>NADA POR AQUI AINDA...</span>
-                    <span class="text-sm font-sans opacity-70">Aguarde o professor postar novas aulas!</span>
-                </div>
-            `;
-            lucide.createIcons();
         }
 
         window.logout = () => {
