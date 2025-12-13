@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akko Academy - Painel ADM</title>
+    <title>Akko Academy - Backstage</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -16,7 +16,7 @@
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // =========================================================================
-        // ⚙️ CONFIGURAÇÃO DO FIREBASE
+        // ⚙️ CONFIGURAÇÃO DO FIREBASE (COLE AQUI)
         // =========================================================================
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
@@ -43,19 +43,19 @@
              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                 await signInWithCustomToken(auth, __initial_auth_token);
             } else {
-                // Tenta manter a sessão ou loga anônimo se necessário para leitura
-                // Nota: Criar usuários vai deslogar o admin atual, comportamento padrão do SDK Client
+                // Tenta manter a sessão silenciosamente
             }
         };
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
             if (!user) {
-                console.log("Admin offline, tentando reconectar...");
+                console.log("Admin offline, conectando anonimamente para leitura...");
                 signInAnonymously(auth);
             } else {
+                // --- CORREÇÃO AQUI: Carrega ambas as listas ao iniciar ---
                 loadLessons();
-                loadStudents(); // Nova função para carregar alunos
+                loadStudents(); 
             }
         });
 
@@ -111,10 +111,9 @@
             });
         }
 
-        // 2. CARREGAR ALUNOS (NOVA FUNÇÃO)
+        // 2. CARREGAR ALUNOS (FIXED)
         function loadStudents() {
             const listContainer = document.getElementById('students-list');
-            // Usamos uma coleção separada 'students' para listar os usuários
             const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
 
             onSnapshot(q, (snapshot) => {
@@ -125,37 +124,41 @@
                     students.push({id: doc.id, ...doc.data()});
                 });
                 
-                // Ordenar por data (mais recente primeiro)
+                // Ordenar: Mais recentes primeiro
                 students.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
                 if (students.length === 0) {
-                    listContainer.innerHTML = '<div class="text-center font-marker text-gray-400 p-4">Nenhum aluno cadastrado via painel.</div>';
+                    listContainer.innerHTML = '<div class="text-center font-marker text-gray-400 p-4">Nenhum aluno encontrado na lista.</div>';
                     return;
                 }
 
                 students.forEach(student => {
+                    // Formata a data se existir
                     const date = student.createdAt ? new Date(student.createdAt.seconds * 1000).toLocaleDateString('pt-BR') : 'Data desc.';
                     
                     const item = document.createElement('div');
-                    item.className = 'bg-white border-2 border-doodle-dark p-3 shadow-hard-sm flex justify-between items-center group hover:bg-doodle-pink/10 transition-colors';
+                    item.className = 'bg-white border-2 border-doodle-dark p-3 shadow-hard-sm flex justify-between items-center group hover:bg-doodle-pink/10 transition-colors mb-2';
                     item.innerHTML = `
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 bg-doodle-purple text-white rounded-full flex items-center justify-center font-comic border border-doodle-dark text-sm">
-                                ${student.name.charAt(0).toUpperCase()}
+                        <div class="flex items-center gap-3 overflow-hidden">
+                            <div class="w-10 h-10 bg-doodle-purple text-white rounded-full flex-shrink-0 flex items-center justify-center font-comic border-2 border-doodle-dark text-lg">
+                                ${(student.name || 'A').charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                                <h4 class="font-comic text-lg text-doodle-dark leading-none">${student.name}</h4>
-                                <p class="text-xs font-sans text-gray-500">${student.email}</p>
-                                <p class="text-[10px] font-mono text-gray-400">Entrou em: ${date}</p>
+                            <div class="min-w-0">
+                                <h4 class="font-comic text-lg text-doodle-dark leading-none truncate">${student.name || 'Sem Nome'}</h4>
+                                <p class="text-xs font-sans text-gray-500 truncate" title="${student.email}">${student.email}</p>
+                                <p class="text-[10px] font-mono text-gray-400 mt-0.5">Cadastrado em: ${date}</p>
                             </div>
                         </div>
-                        <button onclick="deleteDocById('students', '${student.id}')" class="text-red-400 hover:text-red-600 hover:scale-110 transition-transform" title="Remover da lista">
+                        <button onclick="deleteDocById('students', '${student.id}')" class="text-gray-400 hover:text-red-600 hover:scale-110 transition-transform p-2" title="Remover da lista">
                             <i data-lucide="user-x" class="w-5 h-5"></i>
                         </button>
                     `;
                     listContainer.appendChild(item);
                 });
                 lucide.createIcons();
+            }, (error) => {
+                console.error("Erro ao carregar alunos:", error);
+                listContainer.innerHTML = '<div class="text-red-500 text-center text-xs p-2">Erro de permissão ou conexão.</div>';
             });
         }
 
@@ -206,9 +209,9 @@
             }
         };
 
-        // FUNÇÃO GENÉRICA DE DELETAR
+        // DELETAR
         window.deleteDocById = async (collectionName, id) => {
-            if(confirm('Tem certeza? Esta ação é irreversível.')) {
+            if(confirm('Tem certeza? Esta ação remove o item da lista.')) {
                 try { 
                     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, id)); 
                 } catch (e) { 
@@ -226,7 +229,7 @@
             const btn = e.target.querySelector('button');
 
             btn.disabled = true;
-            btn.innerText = 'CRIANDO CONTA...';
+            btn.innerText = 'CRIANDO...';
 
             try {
                 const randomPassword = Math.random().toString(36).slice(-8) + "Aa1";
@@ -235,26 +238,24 @@
                 const userCredential = await createUserWithEmailAndPassword(auth, email, randomPassword);
                 await updateProfile(userCredential.user, { displayName: name });
 
-                // 2. SALVAR NO FIRESTORE (IMPORTANTE PARA A LISTA)
-                // Usamos a coleção 'students' para listar no painel
+                // 2. SALVAR NO FIRESTORE (PARA APARECER NA LISTA)
                 await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
                     uid: userCredential.user.uid,
                     name: name,
                     email: email,
-                    passwordTemp: randomPassword, // Opcional: salvar senha temporária (cuidado com segurança em prod)
+                    passwordTemp: randomPassword, 
                     createdAt: serverTimestamp()
                 });
 
                 resultBox.innerHTML = `
                     <div class="bg-white border-2 border-doodle-dark p-4 mt-4 font-mono text-sm shadow-sm relative">
-                        <div class="absolute -top-3 -right-3 bg-doodle-green text-doodle-dark px-2 py-1 font-bold font-comic border-2 border-doodle-dark rotate-3">SUCESSO!</div>
+                        <div class="absolute -top-3 -right-3 bg-doodle-green text-doodle-dark px-2 py-1 font-bold font-comic border-2 border-doodle-dark rotate-3">CRIADO!</div>
                         <p class="font-bold text-doodle-pink mb-2">DADOS DE ACESSO:</p>
                         <div class="bg-gray-100 p-3 rounded border border-gray-300">
-                            <p><strong>Nome:</strong> ${name}</p>
                             <p><strong>Login:</strong> ${email}</p>
                             <p><strong>Senha:</strong> ${randomPassword}</p>
                         </div>
-                        <p class="mt-3 text-xs text-red-500 font-bold">* Atualize a página para voltar ao modo Admin (o login mudou para este aluno).</p>
+                        <p class="mt-3 text-xs text-red-500 font-bold">* Atualize a página para voltar ao modo Admin.</p>
                     </div>
                 `;
                 
@@ -280,7 +281,7 @@
 
             if(tabName === 'lessons') {
                 tabAulas.classList.remove('hidden');
-                tabAulas.classList.add('flex'); // Flex para layout lado a lado
+                tabAulas.classList.add('flex');
                 tabAlunos.classList.add('hidden');
                 tabAlunos.classList.remove('flex');
                 
@@ -431,6 +432,10 @@
                 <!-- Criar Aluno -->
                 <div class="w-full md:w-1/2 bg-white border-2 border-doodle-dark p-8 shadow-hard-sm relative">
                     <div class="absolute -top-4 -left-4 bg-doodle-purple border-2 border-doodle-dark px-3 py-1 font-comic text-white transform -rotate-1 shadow-sm">NOVO ALUNO</div>
+                    
+                    <p class="font-sans text-sm text-gray-600 mb-6 border-l-4 border-doodle-yellow pl-3 italic">
+                        Esta ferramenta simula o processo automático da Hotmart/Kirvano. Ao criar o aluno aqui, o sistema gera uma senha, <strong>salva o aluno no banco</strong> e exibe os dados.
+                    </p>
 
                     <form onsubmit="handleSimulateSale(event)" class="space-y-4">
                         <div>
