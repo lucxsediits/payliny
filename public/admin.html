@@ -3,23 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akko Academy - Painel ADM</title>
+    <title>Akko Academy - Super Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     
     <!-- Firebase SDKs -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, updateProfile, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, orderBy, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // =========================================================================
-        // ⚙️ CONFIGURAÇÃO & CREDENCIAIS DE ADMIN
+        // ⚙️ CONFIGURAÇÃO & CREDENCIAIS
         // =========================================================================
-        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; // 🚨 Defina seu email de admin aqui
-        const ADMIN_SENHA_PADRAO = "admin123"; // (Opcional: usado se quiser criar o user via código na 1ª vez)
+        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; // 🚨 Seu email de admin
 
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
@@ -36,6 +35,7 @@
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
+        // Inicializa App Principal (Admin)
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
@@ -47,8 +47,7 @@
         let editingLessonId = null;
         let currentUser = null;
 
-        // --- AUTH LÓGICA ---
-        
+        // --- AUTH INIT ---
         const initAuth = async () => {
              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                 await signInWithCustomToken(auth, __initial_auth_token);
@@ -58,14 +57,12 @@
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                // Verifica se é o admin correto (Segurança simples de frontend)
-                // Idealmente, use Custom Claims no backend, mas isso serve para MVP
                 if(user.email === ADMIN_EMAIL_PERMITIDO) {
                     currentUser = user;
                     showAdminPanel();
                     initRealtimeListeners();
                 } else {
-                    alert("Acesso negado: Este usuário não é administrador.");
+                    alert("Acesso negado: Apenas para Admin.");
                     signOut(auth);
                     showLoginScreen();
                 }
@@ -74,6 +71,7 @@
             }
         });
 
+        // --- FUNÇÕES DE LOGIN ---
         window.handleAdminLogin = async (e) => {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
@@ -86,28 +84,22 @@
             errorMsg.classList.add('hidden');
 
             try {
-                // Tenta logar
                 await signInWithEmailAndPassword(auth, email, pass);
-                // O onAuthStateChanged vai lidar com o resto
             } catch (error) {
-                console.error(error);
-                let msg = "Erro ao entrar.";
-                if(error.code === 'auth/user-not-found') {
-                    // Fallback: Se o admin não existe, tenta criar (SÓ PARA SETUP INICIAL)
-                    // Remova este bloco em produção se quiser mais segurança
-                    if(email === ADMIN_EMAIL_PERMITIDO && confirm("Admin não encontrado. Deseja criar esta conta agora?")) {
+                console.error("Erro login:", error);
+                let msg = "Erro ao entrar. Verifique email e senha.";
+                
+                // Fallback para criar admin na primeira vez (apenas se for o email correto)
+                if(error.code === 'auth/user-not-found' && email === ADMIN_EMAIL_PERMITIDO) {
+                    if(confirm("Conta Admin não existe. Deseja criar agora?")) {
                         try {
                             await createUserWithEmailAndPassword(auth, email, pass);
-                            return; // Sucesso, o listener vai pegar
-                        } catch(createErr) {
-                            msg = "Erro ao criar admin: " + createErr.message;
-                        }
-                    } else {
-                        msg = "Usuário não encontrado.";
+                            alert("Admin criado! Pode entrar.");
+                            return;
+                        } catch(err) { msg = "Erro ao criar: " + err.message; }
                     }
-                } else if (error.code === 'auth/wrong-password') {
-                    msg = "Senha incorreta.";
                 }
+                
                 errorMsg.innerText = msg;
                 errorMsg.classList.remove('hidden');
                 btn.disabled = false;
@@ -131,13 +123,14 @@
             document.getElementById('admin-email-display').innerText = currentUser.email;
         }
 
-        // --- REALTIME DATA ---
+        // --- DADOS EM TEMPO REAL ---
         function initRealtimeListeners() {
             // Aulas
             const qLessons = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
             onSnapshot(qLessons, (snapshot) => {
                 globalLessons = [];
                 snapshot.forEach(doc => globalLessons.push({id: doc.id, ...doc.data()}));
+                // Ordenar aulas (mais novas por último geralmente, ou por data)
                 globalLessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
                 
                 updateDashboardStats();
@@ -150,6 +143,7 @@
             onSnapshot(qStudents, (snapshot) => {
                 globalStudents = [];
                 snapshot.forEach(doc => globalStudents.push({id: doc.id, ...doc.data()}));
+                // Ordenar alunos (mais novos primeiro)
                 globalStudents.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 
                 updateDashboardStats();
@@ -157,7 +151,6 @@
             });
         }
 
-        // --- DASHBOARD ---
         function updateDashboardStats() {
             document.getElementById('count-lessons').innerText = globalLessons.length;
             document.getElementById('count-students').innerText = globalStudents.length;
@@ -176,7 +169,7 @@
             });
         }
 
-        // --- RENDER TABLES ---
+        // --- RENDERIZAÇÃO ---
         window.renderLessonsTable = (filter = "") => {
             const container = document.getElementById('lessons-table-body');
             container.innerHTML = '';
@@ -232,7 +225,7 @@
                     <td class="p-3 text-sm text-gray-600">${student.email}</td>
                     <td class="p-3 text-xs font-mono text-gray-400">${date}</td>
                     <td class="p-3 text-right">
-                        <button onclick="deleteDocById('students', '${student.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded"><i data-lucide="user-x" class="w-4 h-4"></i></button>
+                        <button onclick="deleteDocById('students', '${student.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded" title="Remover da Lista"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </td>
                 `;
                 container.appendChild(tr);
@@ -240,15 +233,85 @@
             lucide.createIcons();
         }
 
-        // --- ACTIONS ---
+        // --- AÇÕES DO SISTEMA ---
+
+        // 1. DELETAR (Genérico)
         window.deleteDocById = async (col, id) => {
-            if(confirm("Tem certeza absoluta?")) {
-                try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id)); } 
-                catch(e) { alert("Erro: " + e.message); }
+            const msg = col === 'students' 
+                ? "Tem certeza? Isso removerá o aluno da lista do site, mas a conta de login pode permanecer no sistema do Google. Deseja continuar?" 
+                : "Tem certeza absoluta? Não dá pra desfazer.";
+                
+            if(confirm(msg)) {
+                try { 
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id)); 
+                    // Se for student, apenas remove o documento do Firestore.
+                    // O Auth User (Login) não pode ser deletado pelo Client SDK sem deslogar o admin.
+                } 
+                catch(e) { alert("Erro ao deletar: " + e.message); }
             }
         }
 
-        // Lesson Modal
+        // 2. CRIAR ALUNO SEM DESLOGAR (Truque do App Secundário)
+        window.handleCreateStudent = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('sale-email').value;
+            const name = document.getElementById('sale-name').value;
+            const btn = e.target.querySelector('button');
+            const resultDiv = document.getElementById('sale-result');
+
+            btn.disabled = true;
+            btn.innerText = "CRIANDO CONTA...";
+            resultDiv.innerHTML = "";
+
+            try {
+                const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
+                
+                // TRUQUE: Cria um "App Secundário" para não deslogar o Admin
+                const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+                const secondaryAuth = getAuth(secondaryApp);
+                
+                // Cria o usuário na instância secundária
+                const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPass);
+                const newUid = userCred.user.uid;
+
+                // Deleta a instância secundária para limpar memória
+                // (Isso não deleta o usuário, só desconecta a sessão temporária)
+                await secondaryAuth.signOut(); // Desloga do secundário por garantia
+                
+                // Agora salva no Firestore usando a instância PRINCIPAL (Admin)
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
+                    uid: newUid,
+                    name: name,
+                    email: email,
+                    passwordTemp: tempPass, // Guarda temporariamente para mostrar na tela
+                    createdAt: serverTimestamp()
+                });
+
+                resultDiv.innerHTML = `
+                    <div class="bg-green-100 p-3 border-2 border-green-500 text-sm mt-4 rounded shadow-sm">
+                        <strong class="text-green-800">✅ Aluno Criado com Sucesso!</strong>
+                        <div class="mt-2 bg-white p-2 border border-gray-300 rounded font-mono text-xs">
+                            <p><strong>Login:</strong> ${email}</p>
+                            <p><strong>Senha:</strong> ${tempPass}</p>
+                        </div>
+                        <p class="text-xs text-green-700 mt-2">Envie estes dados para o aluno.</p>
+                    </div>
+                `;
+                
+                e.target.reset();
+
+            } catch (err) {
+                console.error(err);
+                let msg = err.message;
+                if(err.code === 'auth/email-already-in-use') msg = "Este e-mail já está cadastrado!";
+                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold bg-red-100 p-2 border border-red-200">❌ ${msg}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "CADASTRAR ALUNO";
+            }
+        }
+
+        // --- GESTÃO DE AULAS (MODAL) ---
         window.openCreateLesson = () => {
             editingLessonId = null;
             document.getElementById('lesson-modal-title').innerText = "NOVA AULA";
@@ -331,54 +394,11 @@
             }
         }
 
-        // --- TEST TOOLS (Antigo test.html) ---
-        const firstNames = ["Ana", "Bruno", "Carlos", "Diana", "Eduardo"];
-        const lastNames = ["Silva", "Santos", "Oliveira", "Souza", "Pereira"];
-
-        window.generateTestData = async () => {
-            const btn = document.getElementById('btn-generate');
-            const log = document.getElementById('log-generate');
-            btn.disabled = true;
-            btn.innerText = "GERANDO...";
-            log.innerHTML = "";
-
-            try {
-                for (let i = 0; i < 5; i++) {
-                    const name = `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
-                    const email = `teste.${Math.floor(Math.random() * 1000)}@exemplo.com`;
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
-                        name: name, email: email, uid: "sim_" + Date.now(), createdAt: serverTimestamp()
-                    });
-                    log.innerHTML += `<div class="text-green-600 text-xs">✔ ${name}</div>`;
-                }
-            } catch (error) {
-                log.innerHTML += `<div class="text-red-500">Erro: ${error.message}</div>`;
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "GERAR +5 ALUNOS";
-            }
-        };
-
+        // --- TEST TOOLS ---
         window.testWebhook = async (e) => {
             e.preventDefault();
-            const url = document.getElementById('webhook-url').value;
-            const email = document.getElementById('webhook-email').value;
-            const name = document.getElementById('webhook-name').value;
-            const log = document.getElementById('log-webhook');
-            
-            if(!url) { alert("Cole a URL da Function!"); return; }
-            log.innerHTML = "Enviando...";
-            
-            try {
-                const res = await fetch(url, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ client: { name, email }, event: "purchase_approved" })
-                });
-                const text = await res.text();
-                log.innerHTML = res.ok ? `<span class="text-green-600">SUCESSO: ${text}</span>` : `<span class="text-red-600">ERRO: ${text}</span>`;
-            } catch (error) {
-                log.innerHTML = `<span class="text-red-600">FALHA: ${error.message}</span>`;
-            }
+            // Lógica do Webhook (Opcional, se você tiver configurado)
+            alert("Função de Webhook disponível se configurada no backend.");
         };
 
         // --- UI UTILS ---
@@ -416,7 +436,7 @@
 </head>
 <body class="bg-[#F3F4F6] text-[#2D2B38] font-sans h-screen flex overflow-hidden">
 
-    <!-- LOGIN SCREEN (OVERLAY) -->
+    <!-- LOGIN SCREEN -->
     <div id="login-screen" class="fixed inset-0 z-50 bg-doodle-dark flex items-center justify-center">
         <div class="bg-white p-8 border-4 border-doodle-pink shadow-[10px_10px_0px_#fff] max-w-sm w-full transform rotate-1">
             <h1 class="font-comic text-4xl text-center mb-6">AREA RESTRITA</h1>
@@ -437,7 +457,7 @@
         </div>
     </div>
 
-    <!-- ADMIN PANEL (HIDDEN BY DEFAULT) -->
+    <!-- ADMIN PANEL -->
     <div id="admin-panel" class="hidden flex w-full h-full">
         <!-- SIDEBAR -->
         <aside class="w-64 bg-white border-r-4 border-doodle-dark flex flex-col z-20 shadow-hard">
@@ -516,38 +536,53 @@
 
                 <!-- VIEW: STUDENTS -->
                 <div id="view-students" class="hidden flex-col h-full">
-                    <div class="bg-white border-4 border-doodle-dark shadow-hard flex flex-col min-h-[600px]">
-                        <div class="p-4 border-b-2 border-doodle-dark bg-gray-50 flex justify-between items-center">
-                            <h3 class="font-comic text-xl">LISTA DE ALUNOS</h3>
-                            <div class="relative w-64"><i data-lucide="search" class="absolute left-2 top-2 w-4 h-4 text-gray-400"></i><input type="text" onkeyup="filterStudents(event)" placeholder="Buscar aluno..." class="w-full pl-8 py-1 border-2 border-doodle-dark text-sm rounded"></div>
+                    <div class="grid md:grid-cols-3 gap-6 h-full">
+                        <!-- Novo Aluno (Agora na aba correta) -->
+                        <div class="col-span-1 bg-white border-4 border-doodle-dark shadow-hard p-6 h-fit">
+                            <div class="flex items-center gap-2 mb-4 border-b-2 border-dashed border-gray-300 pb-2">
+                                <i data-lucide="user-plus" class="w-6 h-6 text-doodle-purple"></i>
+                                <h2 class="font-comic text-2xl">NOVO ALUNO</h2>
+                            </div>
+                            <form onsubmit="handleCreateStudent(event)" class="space-y-4">
+                                <div>
+                                    <label class="text-xs font-bold text-gray-500">NOME</label>
+                                    <input type="text" id="sale-name" class="w-full border-2 border-doodle-dark p-2 rounded" placeholder="Nome Completo" required>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-gray-500">EMAIL</label>
+                                    <input type="email" id="sale-email" class="w-full border-2 border-doodle-dark p-2 rounded" placeholder="email@exemplo.com" required>
+                                </div>
+                                <button class="w-full py-2 bg-doodle-purple text-white font-comic text-xl border-2 border-doodle-dark shadow-sm hover:bg-doodle-pink transition-colors">
+                                    CADASTRAR ALUNO
+                                </button>
+                            </form>
+                            <div id="sale-result"></div>
                         </div>
-                        <div class="overflow-y-auto flex-1 custom-scroll p-0"><table class="w-full text-left"><thead class="bg-gray-100 border-b border-gray-200 text-xs font-bold text-gray-500"><tr><th class="p-3">NOME</th><th class="p-3">EMAIL</th><th class="p-3">DATA</th><th class="p-3 text-right">AÇÃO</th></tr></thead><tbody id="students-table-body"></tbody></table></div>
+
+                        <!-- Lista -->
+                        <div class="col-span-2 bg-white border-4 border-doodle-dark shadow-hard flex flex-col min-h-[500px]">
+                            <div class="p-4 border-b-2 border-doodle-dark bg-gray-50 flex justify-between items-center">
+                                <h3 class="font-comic text-xl">BASE DE ALUNOS</h3>
+                                <div class="relative w-64"><i data-lucide="search" class="absolute left-2 top-2 w-4 h-4 text-gray-400"></i><input type="text" onkeyup="filterStudents(event)" placeholder="Buscar aluno..." class="w-full pl-8 py-1 border-2 border-doodle-dark text-sm rounded"></div>
+                            </div>
+                            <div class="overflow-y-auto flex-1 custom-scroll p-0"><table class="w-full text-left"><thead class="bg-gray-100 border-b border-gray-200 text-xs font-bold text-gray-500"><tr><th class="p-3">NOME</th><th class="p-3">EMAIL</th><th class="p-3">DATA</th><th class="p-3 text-right">AÇÃO</th></tr></thead><tbody id="students-table-body"></tbody></table></div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- VIEW: TESTS (Antigo test.html) -->
                 <div id="view-tests" class="hidden flex-col h-full space-y-6">
                     <h1 class="font-comic text-4xl text-doodle-dark mb-4">LABORATÓRIO DE TESTES</h1>
-                    <div class="grid md:grid-cols-2 gap-6">
-                        <!-- Gerador -->
-                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-6">
-                            <h3 class="font-marker text-xl mb-2 text-doodle-purple">1. Gerar Alunos Falsos</h3>
-                            <p class="text-xs text-gray-500 mb-4">Cria 5 registros no banco para testar a lista.</p>
-                            <button id="btn-generate" onclick="generateTestData()" class="w-full bg-doodle-yellow border-2 border-doodle-dark font-bold py-2 shadow-sm">GERAR +5 ALUNOS</button>
-                            <div id="log-generate" class="mt-2 text-xs h-20 overflow-y-auto bg-gray-100 p-2 border border-doodle-dark/20"></div>
+                    <div class="bg-white border-4 border-doodle-dark shadow-hard p-6">
+                        <h3 class="font-marker text-xl mb-2 text-doodle-green">2. Testar Webhook (Email)</h3>
+                        <p class="text-xs text-gray-500 mb-4">Simula uma venda da Hotmart/Cakto.</p>
+                        <input type="url" id="webhook-url" class="w-full border-2 border-doodle-dark p-2 text-sm mb-2" placeholder="Cole a URL da Cloud Function aqui">
+                        <div class="flex gap-2 mb-2">
+                            <input type="text" id="webhook-name" value="Teste Webhook" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
+                            <input type="email" id="webhook-email" value="teste@webhook.com" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
                         </div>
-                        <!-- Webhook -->
-                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-6">
-                            <h3 class="font-marker text-xl mb-2 text-doodle-green">2. Testar Webhook (Email)</h3>
-                            <p class="text-xs text-gray-500 mb-4">Simula uma venda da Hotmart/Cakto.</p>
-                            <input type="url" id="webhook-url" class="w-full border-2 border-doodle-dark p-2 text-sm mb-2" placeholder="Cole a URL da Cloud Function aqui">
-                            <div class="flex gap-2 mb-2">
-                                <input type="text" id="webhook-name" value="Teste Webhook" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
-                                <input type="email" id="webhook-email" value="teste@webhook.com" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
-                            </div>
-                            <button onclick="testWebhook(event)" class="w-full bg-doodle-green border-2 border-doodle-dark font-bold py-2 shadow-sm">DISPARAR TESTE</button>
-                            <div id="log-webhook" class="mt-2 text-xs h-10 bg-gray-100 p-2 border border-doodle-dark/20"></div>
-                        </div>
+                        <button onclick="testWebhook(event)" class="w-full bg-doodle-green border-2 border-doodle-dark font-bold py-2 shadow-sm">DISPARAR TESTE</button>
+                        <div id="log-webhook" class="mt-2 text-xs h-10 bg-gray-100 p-2 border border-doodle-dark/20"></div>
                     </div>
                 </div>
 
