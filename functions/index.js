@@ -5,83 +5,39 @@ const cors = require("cors")({ origin: true });
 
 admin.initializeApp();
 
-// ==================================================================
-// ⚙️ CONFIGURAÇÃO DE EMAIL (GMAIL)
-// ==================================================================
+// ⚙️ CONFIG DO EMAIL (MANTÉM OS TEUS DADOS AQUI)
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: "akkoacademycontato@gmail.com",
-    pass: "fhhb efdx lzep jzvi",
+    pass: "fhhb efdx lzep jzvi",    
   },
 });
 
-// ==================================================================
-// 🚀 WEBHOOK: RECEBER VENDA DA CAKTO
-// ==================================================================
+// 1. WEBHOOK DE VENDAS (Cakto/Hotmart)
 exports.handleNewSale = functions.https.onRequest(async (req, res) => {
-  // 1. Permitir pedidos de qualquer origem (Cakto)
   cors(req, res, async () => {
     try {
-      console.log("🔔 Webhook recebido. Payload:", JSON.stringify(req.body));
-
-      // 2. Extrair dados (Compatível com Cakto e outros)
-      // A Cakto costuma enviar os dados do cliente dentro de um objeto 'client' ou na raiz.
       const payload = req.body;
-      
-      const buyerEmail = 
-        payload.client?.email || 
-        payload.customer?.email || 
-        payload.email;
+      const email = payload.client?.email || payload.customer?.email || payload.email;
+      const name = payload.client?.name || payload.customer?.name || payload.name || "Aluno";
 
-      const buyerName = 
-        payload.client?.name || 
-        payload.customer?.name || 
-        payload.name || 
-        "Novo Aluno";
+      if (!email) return res.status(400).send("Email não encontrado.");
 
-      // Validação de Segurança
-      if (!buyerEmail) {
-        console.error("❌ Email não encontrado no payload.");
-        return res.status(400).send("Email obrigatório não encontrado.");
-      }
+      const password = Math.random().toString(36).slice(-8) + "Aa1";
 
-      console.log(`✅ Processando venda para: ${buyerEmail}`);
-
-      // 3. Gerar Senha Aleatória Segura
-      const randomPassword = Math.random().toString(36).slice(-8) + "Aa1";
-
-      // 4. Criar utilizador no Firebase Authentication
-      let userRecord;
       try {
-        userRecord = await admin.auth().createUser({
-          email: buyerEmail,
-          password: randomPassword,
-          displayName: buyerName,
-        });
-        console.log("👤 Utilizador criado no Auth:", userRecord.uid);
-
-        // (Opcional) Guardar dados extras no Firestore para o painel de admin
-        await admin.firestore().collection('artifacts').doc('default-app-id').collection('public').doc('data').collection('students').add({
-            uid: userRecord.uid,
-            name: buyerName,
-            email: buyerEmail,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
+        await admin.auth().createUser({ email, password, displayName: name });
       } catch (err) {
-        if (err.code === "auth/email-already-in-use") {
-          console.log("⚠️ Utilizador já existe. Ignorando criação.");
-          return res.status(200).send("Utilizador já existe.");
-        }
+        if (err.code === "auth/email-already-in-use") return res.status(200).send("Usuário já existe.");
         throw err;
       }
 
-      // 5. Enviar Email com as Credenciais
-      const mailOptions = {
-        from: '"Akko Academy" <akkoacademycontato@gmail.com>',
-        to: buyerEmail,
-        subject: "🚀 Acesso Liberado: A sua jornada começa agora!",
+      // Envia Email (PT-BR)
+      await transporter.sendMail({
+        from: '"Akko Academy" <teu_email@gmail.com>',
+        to: email,
+        subject: "🚀 Acesso Liberado: Sua jornada começa agora!",
         html: `
           <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2D2B38; max-width: 600px; margin: 0 auto; border: 3px solid #2D2B38; border-radius: 8px; overflow: hidden;">
             <div style="background-color: #F2E058; padding: 20px; text-align: center; border-bottom: 3px solid #2D2B38;">
@@ -89,39 +45,71 @@ exports.handleNewSale = functions.https.onRequest(async (req, res) => {
             </div>
             
             <div style="padding: 30px; background-color: #ffffff;">
-              <p style="font-size: 16px;">Olá <strong>${buyerName}</strong>,</p>
-              <p style="font-size: 16px;">A sua inscrição foi confirmada com sucesso. Já pode acessar à área de membros e começar a estudar.</p>
+              <p style="font-size: 16px;">Olá <strong>${name}</strong>,</p>
+              <p style="font-size: 16px;">Sua inscrição foi confirmada com sucesso. Já pode acessar a área de membros e começar a estudar.</p>
               
               <div style="background-color: #F8F9FD; border: 2px dashed #2D2B38; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                <p style="margin: 5px 0; font-size: 14px; color: #666;">SEU EMAIL:</p>
-                <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold;">${buyerEmail}</p>
+                <p style="margin: 5px 0; font-size: 14px; color: #666;">SEU LOGIN:</p>
+                <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold;">${email}</p>
                 
                 <p style="margin: 5px 0; font-size: 14px; color: #666;">SUA SENHA:</p>
-                <p style="margin: 0; font-size: 18px; font-weight: bold; background: #fff; display: inline-block; padding: 5px 10px; border: 1px solid #ddd;">${randomPassword}</p>
+                <p style="margin: 0; font-size: 18px; font-weight: bold; background: #fff; display: inline-block; padding: 5px 10px; border: 1px solid #ddd;">${password}</p>
               </div>
 
               <div style="text-align: center;">
-                <a href="LINK DO SITE AQUI" style="background-color: #FF66C4; color: #ffffff; text-decoration: none; padding: 15px 30px; font-weight: bold; border-radius: 50px; font-size: 16px; display: inline-block; border: 2px solid #2D2B38; box-shadow: 4px 4px 0 #2D2B38;">
-                  ACESSO À PLATAFORMA ➔
+                <a href="https://teu-projeto.web.app/membros.html" style="background-color: #FF66C4; color: #ffffff; text-decoration: none; padding: 15px 30px; font-weight: bold; border-radius: 50px; font-size: 16px; display: inline-block; border: 2px solid #2D2B38; box-shadow: 4px 4px 0 #2D2B38;">
+                  ACESSAR PLATAFORMA ➔
                 </a>
               </div>
             </div>
             
             <div style="background-color: #2D2B38; color: #ffffff; padding: 15px; text-align: center; font-size: 12px;">
-              <p style="margin: 0;">Se tiveres dúvidas, responde a este email.</p>
+              <p style="margin: 0;">Se tiver dúvidas, responda a este e-mail.</p>
             </div>
           </div>
-        `,
-      };
+        `
+      });
 
-      await transporter.sendMail(mailOptions);
-      console.log("✉️ Email enviado com sucesso!");
-
-      return res.status(200).send("Processado com sucesso.");
-
+      return res.status(200).send("Sucesso!");
     } catch (error) {
-      console.error("❌ Erro critico:", error);
-      return res.status(500).send("Erro interno no servidor.");
+      console.error(error);
+      return res.status(500).send("Erro interno.");
+    }
+  });
+});
+
+// 2. LISTAR TODOS OS USUÁRIOS (ADMIN API)
+exports.listUsersAPI = functions.https.onRequest(async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      const listUsersResult = await admin.auth().listUsers(1000);
+      const users = listUsersResult.users.map(user => ({
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || 'Sem Nome',
+        creationTime: user.metadata.creationTime,
+        lastSignInTime: user.metadata.lastSignInTime
+      }));
+      res.json(users);
+    } catch (error) {
+      console.error(error);
+      res.status(500).send('Erro ao listar.');
+    }
+  });
+});
+
+// 3. DELETAR USUÁRIO (ADMIN API)
+exports.deleteUserAPI = functions.https.onRequest(async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      const uid = req.body.uid;
+      if (!uid) return res.status(400).send("UID necessário.");
+      
+      await admin.auth().deleteUser(uid);
+      res.json({ success: true });
+    } catch (error) {
+      console.error(error);
+      res.status(500).send('Erro ao deletar.');
     }
   });
 });
