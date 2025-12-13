@@ -42,6 +42,10 @@
         let globalLessons = [];
         let globalStudents = [];
         let editingLessonId = null; // Para saber se estamos editando
+        
+        // URL DO SEU WEBHOOK (CLOUD FUNCTION) - PREENCHA AQUI DEPOIS DO DEPLOY
+        // Se estiver vazio, o sistema cria o aluno localmente sem enviar email real.
+        const CLOUD_FUNCTION_URL = "https://handlenewsale-3mnemxevua-uc.a.run.app"; 
 
         // AUTH INIT
         const initAuth = async () => {
@@ -123,17 +127,24 @@
             );
 
             if(filtered.length === 0) {
-                container.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`;
+                container.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`;
                 return;
             }
 
             filtered.forEach(lesson => {
                 const tr = document.createElement('tr');
                 tr.className = "border-b border-gray-200 hover:bg-gray-50";
+                
+                // Verifica se tem anexo
+                const attachmentIcon = lesson.attachmentUrl 
+                    ? `<a href="${lesson.attachmentUrl}" target="_blank" class="text-blue-500 hover:text-blue-700" title="Ver Anexo"><i data-lucide="paperclip" class="w-4 h-4 inline"></i></a>` 
+                    : `<span class="text-gray-300">-</span>`;
+
                 tr.innerHTML = `
                     <td class="p-3 font-comic text-doodle-purple">${lesson.moduleName}</td>
                     <td class="p-3 font-bold text-gray-700">${lesson.title}</td>
                     <td class="p-3 text-xs font-mono text-gray-500 truncate max-w-[150px]">${lesson.professor}</td>
+                    <td class="p-3 text-center">${attachmentIcon}</td>
                     <td class="p-3 flex gap-2 justify-end">
                         <button onclick="openEditLesson('${lesson.id}')" class="p-1 text-blue-500 hover:bg-blue-100 rounded" title="Editar">
                             <i data-lucide="pencil" class="w-4 h-4"></i>
@@ -204,6 +215,10 @@
             editingLessonId = null;
             document.getElementById('lesson-modal-title').innerText = "NOVA AULA";
             document.getElementById('lesson-form').reset();
+            
+            // Resetar visualização de arquivo existente
+            document.getElementById('current-attachment').classList.add('hidden');
+            
             document.getElementById('lesson-modal').classList.remove('hidden');
         }
 
@@ -220,10 +235,21 @@
             document.getElementById('inp-prof').value = lesson.professor;
             document.getElementById('inp-desc').value = lesson.description || '';
             
-            // Lógica URL/Arquivo
+            // Lógica URL/Arquivo de Vídeo
             if(lesson.videoUrl) {
                 document.getElementById('inp-url').value = lesson.videoUrl;
                 toggleVideoInput('url'); 
+            }
+
+            // Lógica de Anexo
+            const currentAttach = document.getElementById('current-attachment');
+            const attachLink = document.getElementById('attachment-link');
+            if(lesson.attachmentUrl) {
+                currentAttach.classList.remove('hidden');
+                attachLink.href = lesson.attachmentUrl;
+                attachLink.innerText = "Baixar Arquivo Atual";
+            } else {
+                currentAttach.classList.add('hidden');
             }
 
             document.getElementById('lesson-modal').classList.remove('hidden');
@@ -246,11 +272,13 @@
                 const moduleName = document.getElementById('inp-module').value;
                 const professor = document.getElementById('inp-prof').value;
                 const description = document.getElementById('inp-desc').value;
+                
+                // 1. Processar Vídeo
                 let videoUrl = document.getElementById('inp-url').value;
                 const fileInput = document.getElementById('inp-file');
 
-                // Upload se tiver arquivo novo
                 if (fileInput.files.length > 0) {
+                    btn.innerText = "ENVIANDO VÍDEO...";
                     const storageRef = ref(storage, `artifacts/${appId}/public/videos/${Date.now()}_${fileInput.files[0].name}`);
                     const snapshot = await uploadBytes(storageRef, fileInput.files[0]);
                     videoUrl = await getDownloadURL(snapshot.ref);
@@ -258,14 +286,30 @@
 
                 if (!videoUrl && !editingLessonId) throw new Error("Vídeo obrigatório.");
 
-                const data = { title, moduleName, professor, videoUrl, description };
+                // 2. Processar Anexo (Novo)
+                let attachmentUrl = null;
+                const attachInput = document.getElementById('inp-attachment');
                 
+                if (attachInput.files.length > 0) {
+                    btn.innerText = "ENVIANDO ANEXO...";
+                    const attachRef = ref(storage, `artifacts/${appId}/public/attachments/${Date.now()}_${attachInput.files[0].name}`);
+                    const snapshotAttach = await uploadBytes(attachRef, attachInput.files[0]);
+                    attachmentUrl = await getDownloadURL(snapshotAttach.ref);
+                }
+
+                // 3. Montar Objeto
+                const data = { title, moduleName, professor, videoUrl, description };
+                if (attachmentUrl) data.attachmentUrl = attachmentUrl; // Só adiciona se tiver novo upload
+
                 // Se for criação, adiciona data
                 if(!editingLessonId) {
                     data.createdAt = serverTimestamp();
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'), data);
                 } else {
-                    // Update
+                    // Update - Mantém anexo antigo se não enviou novo
+                    // O merge: true não é automático com updateDoc, mas updateDoc só muda os campos passados.
+                    // Se attachmentUrl for null, ele não vai para o objeto data acima se não enviarmos.
+                    // Para apagar um anexo seria necessário outra lógica, aqui assumimos que novo substitui ou mantém.
                     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lessons', editingLessonId), data);
                 }
 
@@ -281,7 +325,7 @@
             }
         }
 
-        // Criar Aluno (Simulação de Venda)
+        // Criar Aluno (Simulação de Venda + Webhook Trigger)
         window.handleCreateStudent = async (e) => {
             e.preventDefault();
             const email = document.getElementById('sale-email').value;
@@ -293,25 +337,54 @@
             btn.innerText = "CRIANDO...";
 
             try {
-                const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
-                const userCred = await createUserWithEmailAndPassword(auth, email, tempPass);
-                await updateProfile(userCred.user, { displayName: name });
+                // OPÇÃO 1: Se você tiver a URL da Cloud Function, usa ela para simular tudo (inclusive e-mail)
+                if (CLOUD_FUNCTION_URL) {
+                    const response = await fetch(CLOUD_FUNCTION_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            client: { name: name, email: email },
+                            event: "purchase_approved" // Simula evento da Hotmart/Cakto
+                        })
+                    });
 
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
-                    uid: userCred.user.uid,
-                    name, email,
-                    passwordTemp: tempPass,
-                    createdAt: serverTimestamp()
-                });
+                    if (response.ok) {
+                        resultDiv.innerHTML = `
+                            <div class="bg-green-100 p-2 border border-green-500 text-xs mt-2 rounded">
+                                <strong>Sucesso!</strong><br>O servidor processou o cadastro e enviou o e-mail para <em>${email}</em>.
+                            </div>
+                        `;
+                    } else {
+                        throw new Error("Erro no servidor: " + await response.text());
+                    }
 
-                resultDiv.innerHTML = `
-                    <div class="bg-green-100 p-2 border border-green-500 text-xs mt-2 rounded">
-                        <strong>Sucesso!</strong><br>Login: ${email}<br>Senha: ${tempPass}
-                    </div>
-                `;
+                } else {
+                    // OPÇÃO 2: Criação Manual Local (Sem envio de e-mail real pelo frontend)
+                    const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
+                    const userCred = await createUserWithEmailAndPassword(auth, email, tempPass);
+                    await updateProfile(userCred.user, { displayName: name });
+
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
+                        uid: userCred.user.uid,
+                        name, email,
+                        passwordTemp: tempPass,
+                        createdAt: serverTimestamp()
+                    });
+
+                    resultDiv.innerHTML = `
+                        <div class="bg-yellow-100 p-2 border border-yellow-500 text-xs mt-2 rounded">
+                            <strong>Criado Localmente!</strong><br>Login: ${email}<br>Senha: ${tempPass}<br>
+                            <span class="text-red-500 font-bold">Nota: O e-mail NÃO foi enviado pois a URL do Webhook não foi configurada no código.</span>
+                        </div>
+                    `;
+                }
+                
                 e.target.reset();
             } catch (err) {
-                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2">${err.message}</div>`;
+                console.error(err);
+                let msg = err.message;
+                if(err.code === 'auth/email-already-in-use') msg = "Este email já possui cadastro!";
+                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold">${msg}</div>`;
             } finally {
                 btn.disabled = false;
                 btn.innerText = "CADASTRAR";
@@ -488,10 +561,11 @@
                     </div>
 
                     <!-- Table Header -->
-                    <div class="grid grid-cols-[1fr_2fr_1fr_100px] bg-doodle-yellow border-b-2 border-doodle-dark font-comic text-lg p-2 px-4">
+                    <div class="grid grid-cols-[1fr_2fr_1fr_100px_100px] bg-doodle-yellow border-b-2 border-doodle-dark font-comic text-lg p-2 px-4">
                         <div>MÓDULO</div>
                         <div>TÍTULO DA AULA</div>
                         <div>PROFESSOR</div>
+                        <div class="text-center">ANEXO</div>
                         <div class="text-right">AÇÕES</div>
                     </div>
 
@@ -597,6 +671,16 @@
                     </div>
                     <div id="container-file" class="hidden">
                         <input type="file" id="inp-file" class="w-full text-sm" accept="video/*">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="font-bold text-xs block mb-1">MATERIAL DE APOIO (OPCIONAL)</label>
+                    <div class="border-2 border-doodle-dark p-2 bg-gray-50 flex items-center justify-between">
+                        <input type="file" id="inp-attachment" class="w-full text-sm">
+                        <div id="current-attachment" class="hidden text-xs text-blue-600 font-bold ml-2">
+                            <a href="#" target="_blank" id="attachment-link">Ver Atual</a>
+                        </div>
                     </div>
                 </div>
 
