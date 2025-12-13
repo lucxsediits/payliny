@@ -79,9 +79,9 @@ exports.handleNewSale = functions.https.onRequest(async (req, res) => {
 
       // 5. Enviar Email com as Credenciais
       const mailOptions = {
-        from: '"Akko Academy" <teu_email_suporte@gmail.com>',
+        from: '"Akko Academy" <akkoacademycontato@gmail.com>',
         to: buyerEmail,
-        subject: "🚀 Acesso Liberado: A tua jornada começa agora!",
+        subject: "🚀 Acesso Liberado: A sua jornada começa agora!",
         html: `
           <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #2D2B38; max-width: 600px; margin: 0 auto; border: 3px solid #2D2B38; border-radius: 8px; overflow: hidden;">
             <div style="background-color: #F2E058; padding: 20px; text-align: center; border-bottom: 3px solid #2D2B38;">
@@ -90,19 +90,19 @@ exports.handleNewSale = functions.https.onRequest(async (req, res) => {
             
             <div style="padding: 30px; background-color: #ffffff;">
               <p style="font-size: 16px;">Olá <strong>${buyerName}</strong>,</p>
-              <p style="font-size: 16px;">A tua inscrição foi confirmada com sucesso. Já podes aceder à área de membros e começar a estudar.</p>
+              <p style="font-size: 16px;">A sua inscrição foi confirmada com sucesso. Já pode acessar à área de membros e começar a estudar.</p>
               
               <div style="background-color: #F8F9FD; border: 2px dashed #2D2B38; padding: 20px; border-radius: 8px; margin: 25px 0;">
-                <p style="margin: 5px 0; font-size: 14px; color: #666;">O TEU LOGIN:</p>
+                <p style="margin: 5px 0; font-size: 14px; color: #666;">SEU EMAIL:</p>
                 <p style="margin: 0 0 15px 0; font-size: 18px; font-weight: bold;">${buyerEmail}</p>
                 
-                <p style="margin: 5px 0; font-size: 14px; color: #666;">A TUA SENHA:</p>
+                <p style="margin: 5px 0; font-size: 14px; color: #666;">SUA SENHA:</p>
                 <p style="margin: 0; font-size: 18px; font-weight: bold; background: #fff; display: inline-block; padding: 5px 10px; border: 1px solid #ddd;">${randomPassword}</p>
               </div>
 
               <div style="text-align: center;">
-                <a href="https://teu-projeto.web.app/membros.html" style="background-color: #FF66C4; color: #ffffff; text-decoration: none; padding: 15px 30px; font-weight: bold; border-radius: 50px; font-size: 16px; display: inline-block; border: 2px solid #2D2B38; box-shadow: 4px 4px 0 #2D2B38;">
-                  ACEDER À PLATAFORMA ➔
+                <a href="LINK DO SITE AQUI" style="background-color: #FF66C4; color: #ffffff; text-decoration: none; padding: 15px 30px; font-weight: bold; border-radius: 50px; font-size: 16px; display: inline-block; border: 2px solid #2D2B38; box-shadow: 4px 4px 0 #2D2B38;">
+                  ACESSO À PLATAFORMA ➔
                 </a>
               </div>
             </div>
