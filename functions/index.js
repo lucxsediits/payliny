@@ -10,8 +10,8 @@ admin.initializeApp();
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: "teu_email_suporte@gmail.com", // ⚠️ COLOCA O TEU EMAIL
-    pass: "tua_senha_de_app_aqui",       // ⚠️ COLOCA A SENHA DE APP (Não a senha normal)
+    user: "akkoacademycontato@gmail.com", // ⚠️ COLOCA O TEU EMAIL
+    pass: "fhhb efdx lzep jzvi",       // ⚠️ COLOCA A SENHA DE APP (Não a senha normal)
   },
 });
 

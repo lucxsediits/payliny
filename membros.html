@@ -12,18 +12,15 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // =========================================================================
-        // ⚙️ PASSO 1: CONFIGURAÇÃO DO FIREBASE (COLE AQUI TAMBÉM)
-        // =========================================================================
         const manualConfig = {
-         apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
-         authDomain: "akko-academy.firebaseapp.com",
-         projectId: "akko-academy",
-         storageBucket: "akko-academy.firebasestorage.app",
-         messagingSenderId: "56272587692",
-         appId: "1:56272587692:web:6e62374b91269073784809"
+          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+          authDomain: "akko-academy.firebaseapp.com",
+          projectId: "akko-academy",
+          storageBucket: "akko-academy.firebasestorage.app",
+          messagingSenderId: "56272587692",
+          appId: "1:56272587692:web:6e62374b91269073784809"
         };
 
         const firebaseConfig = manualConfig.apiKey 
@@ -32,16 +29,17 @@
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        // Inicialização
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         // =========================================================================
 
         let currentLessons = [];
+        let completedLessonIds = new Set(); // Armazena IDs das aulas feitas
         let currentLessonIndex = -1;
+        let currentUser = null;
 
-        // Auth
+        // Auth Init
         const initAuth = async () => {
              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                 await signInWithCustomToken(auth, __initial_auth_token);
@@ -55,33 +53,39 @@
             if (!user) {
                 window.location.href = 'index.html';
             } else {
+                currentUser = user;
                 const userName = localStorage.getItem('userName') || 'Aluno';
                 const initials = userName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
                 document.getElementById('user-avatar').innerText = initials;
                 
-                // Configurar proteção de nome para o player
                 window.currentUserInfo = {
                     name: userName,
                     uid: user.uid.substring(0, 6).toUpperCase()
                 };
 
-                loadContent();
+                // 1. Carregar Aulas (Público)
+                loadLessons();
+                // 2. Carregar Progresso do Usuário (Privado)
+                loadUserProgress(user.uid);
             }
         });
 
-        // Carregar Aulas
-        function loadContent() {
+        // --- LÓGICA DE DADOS ---
+
+        function loadLessons() {
             const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
             
             onSnapshot(q, (snapshot) => {
                 const lessons = [];
                 snapshot.forEach((doc) => lessons.push({ id: doc.id, ...doc.data() }));
                 
+                // Ordenar por data de criação
                 lessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
                 
                 currentLessons = lessons;
-                renderSidebar(lessons);
+                updateUI(); // Atualiza tudo
                 
+                // Carrega a primeira aula se nenhuma estiver ativa
                 if (lessons.length > 0 && currentLessonIndex === -1) {
                     loadLesson(0);
                 } else if (lessons.length === 0) {
@@ -90,20 +94,60 @@
             });
         }
 
-        function renderSidebar(lessons) {
+        function loadUserProgress(userId) {
+            // Escuta a subcoleção 'progress' dentro do documento do usuário
+            const progressRef = collection(db, 'artifacts', appId, 'users', userId, 'progress');
+            
+            onSnapshot(progressRef, (snapshot) => {
+                completedLessonIds.clear();
+                snapshot.forEach(doc => completedLessonIds.add(doc.id));
+                
+                updateUI(); // Re-renderiza a sidebar e a barra de progresso
+                updateCurrentLessonButtonState(); // Atualiza o botão da aula atual
+            });
+        }
+
+        // --- LÓGICA DE UI ---
+
+        function updateUI() {
+            renderSidebar();
+            updateProgressBar();
+        }
+
+        function updateProgressBar() {
+            if (currentLessons.length === 0) return;
+            
+            const total = currentLessons.length;
+            const completed = completedLessonIds.size;
+            // Garante que não passa de 100% se houver lixo no banco
+            const validCompleted = Math.min(completed, total); 
+            const percentage = Math.round((validCompleted / total) * 100);
+
+            document.getElementById('progress-text').innerText = `NÍVEL: ${percentage}%`;
+            document.getElementById('progress-fill').style.width = `${percentage}%`;
+        }
+
+        function renderSidebar() {
             const sidebarContent = document.getElementById('sidebar-content');
+            // Salva o estado dos detalhes abertos para não fechar ao atualizar
+            const openDetails = Array.from(sidebarContent.querySelectorAll('details[open]')).map(d => d.id);
+            
             sidebarContent.innerHTML = '';
 
             const modules = {};
-            lessons.forEach((lesson, index) => {
+            currentLessons.forEach((lesson, index) => {
                 if (!modules[lesson.moduleName]) modules[lesson.moduleName] = [];
                 modules[lesson.moduleName].push({ ...lesson, originalIndex: index });
             });
 
             Object.keys(modules).forEach((moduleName, modIndex) => {
+                const detailsId = `module-${modIndex}`;
                 const details = document.createElement('details');
+                details.id = detailsId;
                 details.className = 'group';
-                if(modIndex === 0) details.setAttribute('open', '');
+                
+                // Mantém aberto se estava antes ou se é o primeiro
+                if(modIndex === 0 || openDetails.includes(detailsId)) details.setAttribute('open', '');
 
                 details.innerHTML = `
                     <summary class="flex items-center justify-between p-3 border-2 border-doodle-dark bg-white shadow-hard-sm cursor-pointer hover:translate-x-1 transition-transform mb-2 relative">
@@ -117,20 +161,39 @@
                 `;
 
                 const container = details.querySelector('.lessons-container');
+                
                 modules[moduleName].forEach(lesson => {
                     const btn = document.createElement('button');
                     const isActive = lesson.originalIndex === currentLessonIndex;
+                    const isCompleted = completedLessonIds.has(lesson.id);
                     
-                    btn.className = `w-full text-left flex items-center gap-3 p-2 rounded border-b-2 border-transparent hover:border-doodle-dark group transition-all lesson-btn ${isActive ? 'bg-doodle-yellow border-2 border-doodle-dark shadow-sm' : 'bg-white/50 hover:bg-doodle-yellow/50'}`;
+                    // Estilo Base
+                    let baseClass = "w-full text-left flex items-center gap-3 p-2 rounded border-b-2 border-transparent group transition-all lesson-btn";
+                    
+                    // Estilo Ativo/Inativo
+                    if (isActive) {
+                        baseClass += " bg-doodle-yellow border-2 border-doodle-dark shadow-sm";
+                    } else {
+                        baseClass += " bg-white/50 hover:bg-doodle-yellow/50 hover:border-doodle-dark";
+                    }
+
+                    // Ícone Checkbox (Visual)
+                    const checkColor = isCompleted ? 'bg-doodle-green' : 'bg-white';
+                    const checkIcon = isCompleted ? '' : 'hidden';
+                    const rotate = isCompleted ? 'rotate-[-5deg]' : '';
+
+                    btn.className = baseClass;
                     btn.onclick = () => loadLesson(lesson.originalIndex);
                     
-                    const iconHtml = isActive 
-                        ? `<div class="w-6 h-6 flex items-center justify-center bg-doodle-pink border-2 border-doodle-dark rounded-full animate-pulse"><i data-lucide="play" class="w-3 h-3 text-white fill-current ml-0.5"></i></div>`
-                        : `<div class="checkbox-wrapper relative flex items-center"><div class="w-6 h-6 border-2 border-doodle-dark bg-white flex items-center justify-center transition-all shadow-[2px_2px_0px_#2D2B38]"><i data-lucide="check" class="w-4 h-4 text-doodle-dark hidden"></i></div></div>`;
-
                     btn.innerHTML = `
-                        ${iconHtml}
-                        <span class="font-bold text-sm text-doodle-dark font-comic tracking-wide group-hover:text-doodle-purple">${lesson.title.toUpperCase()}</span>
+                        <div class="checkbox-wrapper relative flex items-center">
+                            <div class="w-6 h-6 border-2 border-doodle-dark ${checkColor} flex items-center justify-center transition-all shadow-[2px_2px_0px_#2D2B38] ${rotate}">
+                                <i data-lucide="check" class="w-4 h-4 text-doodle-dark ${checkIcon}"></i>
+                            </div>
+                        </div>
+                        <span class="font-bold text-sm text-doodle-dark font-comic tracking-wide group-hover:text-doodle-purple ${isCompleted ? 'line-through opacity-60' : ''}">
+                            ${lesson.title.toUpperCase()}
+                        </span>
                     `;
                     container.appendChild(btn);
                 });
@@ -138,6 +201,8 @@
             });
             lucide.createIcons();
         }
+
+        // --- CONTROLE DE AULA ---
 
         window.loadLesson = function(index) {
             if (!currentLessons[index]) return;
@@ -149,10 +214,12 @@
             document.getElementById('module-bread').innerText = lesson.moduleName;
             document.getElementById('lesson-bread').innerText = lesson.title;
 
-            renderSidebar(currentLessons);
+            updateCurrentLessonButtonState();
+            renderSidebar(); // Para atualizar o highlight da aula ativa
 
             const playerContainer = document.getElementById('video-player-container');
             
+            // Tratamento de URL do Vídeo
             if (lesson.videoUrl.includes('youtube') || lesson.videoUrl.includes('youtu.be')) {
                 let videoId = lesson.videoUrl.split('v=')[1];
                 const ampersandPosition = videoId ? videoId.indexOf('&') : -1;
@@ -162,7 +229,7 @@
                 playerContainer.innerHTML = `
                     <div class="relative w-full h-full bg-black">
                         <iframe id="yt-player" width="100%" height="100%" src="https://www.youtube.com/embed/${videoId}?modestbranding=1&rel=0" frameborder="0" allowfullscreen></iframe>
-                        <div id="watermark-overlay" class="absolute pointer-events-none select-none font-marker text-white/20 text-xl z-50 transition-all duration-1000" style="top: 10%; left: 10%;">
+                        <div id="watermark-overlay" class="absolute pointer-events-none select-none font-marker text-white/20 text-xl z-50 transition-all duration-1000">
                             ${window.currentUserInfo.name} - ${window.currentUserInfo.uid}
                         </div>
                         <div class="absolute inset-0 z-40" oncontextmenu="return false;"></div>
@@ -173,6 +240,62 @@
                 renderCustomPlayer(playerContainer, lesson.videoUrl);
             }
         }
+
+        // Atualiza o botão principal "Marcar como Feito"
+        function updateCurrentLessonButtonState() {
+            if (currentLessonIndex === -1) return;
+            
+            const currentLesson = currentLessons[currentLessonIndex];
+            const isCompleted = completedLessonIds.has(currentLesson.id);
+            const btn = document.getElementById('btn-mark-completed');
+            const btnText = document.getElementById('btn-mark-text');
+            const btnIcon = document.getElementById('btn-mark-icon');
+
+            if (isCompleted) {
+                btn.classList.remove('bg-white');
+                btn.classList.add('bg-doodle-green');
+                btnText.innerText = "CONCLUÍDO";
+                btnIcon.setAttribute('data-lucide', 'check-check');
+            } else {
+                btn.classList.remove('bg-doodle-green');
+                btn.classList.add('bg-white');
+                btnText.innerText = "MARCAR COMO FEITO";
+                btnIcon.setAttribute('data-lucide', 'square');
+            }
+            lucide.createIcons();
+        }
+
+        // Ação do Botão Principal
+        window.toggleCurrentLessonStatus = async () => {
+            if (currentLessonIndex === -1 || !currentUser) return;
+            
+            const lesson = currentLessons[currentLessonIndex];
+            const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'progress', lesson.id);
+
+            const btn = document.getElementById('btn-mark-completed');
+            btn.classList.add('opacity-50', 'pointer-events-none'); // Disable temp
+
+            try {
+                if (completedLessonIds.has(lesson.id)) {
+                    // Desmarcar (Deletar doc)
+                    await deleteDoc(docRef);
+                } else {
+                    // Marcar (Criar doc)
+                    await setDoc(docRef, {
+                        completedAt: serverTimestamp(),
+                        lessonTitle: lesson.title
+                    });
+                }
+            } catch (error) {
+                console.error("Erro ao salvar progresso:", error);
+                alert("Erro ao salvar. Tente novamente.");
+            } finally {
+                btn.classList.remove('opacity-50', 'pointer-events-none');
+                // A UI atualiza automaticamente pelo onSnapshot do loadUserProgress
+            }
+        }
+
+        // --- PLAYER & UTILITÁRIOS ---
 
         function renderCustomPlayer(container, url) {
             container.innerHTML = `
@@ -273,6 +396,11 @@
 
             video.addEventListener('loadedmetadata', () => {
                 durationEl.innerText = formatTime(video.duration);
+            });
+
+            // Auto-conclusão ao terminar o vídeo (Opcional)
+            video.addEventListener('ended', () => {
+                // Se quiser auto-completar: window.toggleCurrentLessonStatus();
             });
 
             window.addEventListener('blur', () => {
@@ -404,11 +532,11 @@
         </a>
 
         <div class="flex items-center gap-6">
-            <!-- Barra de Progresso -->
-            <div class="hidden md:flex flex-col items-end mr-2">
-                <span class="font-comic text-doodle-dark text-lg mb-1 transform rotate-1">NÍVEL: 42%</span>
-                <div class="w-40 h-6 bg-white border-2 border-doodle-dark rounded-none relative shadow-hard-sm">
-                    <div class="h-full bg-doodle-green w-[42%] border-r-2 border-doodle-dark relative overflow-hidden">
+            <!-- Barra de Progresso Dinâmica -->
+            <div class="hidden md:flex flex-col items-end mr-2 w-48">
+                <span id="progress-text" class="font-comic text-doodle-dark text-lg mb-1 transform rotate-1">NÍVEL: 0%</span>
+                <div class="w-full h-6 bg-white border-2 border-doodle-dark rounded-none relative shadow-hard-sm">
+                    <div id="progress-fill" class="h-full bg-doodle-green w-0 border-r-2 border-doodle-dark relative overflow-hidden transition-all duration-500 ease-out">
                          <div class="absolute inset-0 w-full h-full opacity-30" style="background-image: repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 6px);"></div>
                     </div>
                 </div>
@@ -438,7 +566,7 @@
                     </div>
                     <div>
                         <p class="font-comic text-xl leading-none tracking-wide">Edição Pro Master</p>
-                        <p class="font-marker text-xs text-doodle-pink mt-1">Módulos Dinâmicos</p>
+                        <p class="font-marker text-xs text-doodle-pink mt-1">Curso Completo</p>
                     </div>
                 </div>
             </div>
@@ -464,7 +592,7 @@
                     <span id="lesson-bread" class="bg-doodle-purple text-white px-2 py-0.5 border-2 border-doodle-dark transform rotate-2 inline-block shadow-sm">...</span>
                 </div>
 
-                <!-- Título -->
+                <!-- Título e Botão de Conclusão -->
                 <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 border-b-4 border-doodle-dark border-dashed pb-6">
                     <div>
                         <h1 id="lesson-title" class="font-comic text-5xl md:text-6xl text-doodle-dark mb-2 text-shadow-hard-sm" style="-webkit-text-stroke: 1px #2D2B38; color: #fff;">
@@ -472,9 +600,11 @@
                         </h1>
                         <p class="font-marker text-doodle-purple text-xl transform rotate-1">Clique ao lado para começar.</p>
                     </div>
-                    <button class="btn-doodle flex items-center gap-2 px-6 py-3 bg-doodle-green font-comic text-2xl hover:bg-white transition-all transform hover:-rotate-2 whitespace-nowrap">
-                        <i data-lucide="check-square" class="w-6 h-6"></i>
-                        MARCAR COMO FEITO
+                    
+                    <!-- Botão Funcional "Marcar Como Feito" -->
+                    <button id="btn-mark-completed" onclick="toggleCurrentLessonStatus()" class="btn-doodle flex items-center gap-2 px-6 py-3 bg-white font-comic text-2xl hover:bg-doodle-yellow transition-all transform hover:-rotate-2 whitespace-nowrap min-w-[240px] justify-center">
+                        <i id="btn-mark-icon" data-lucide="square" class="w-6 h-6"></i>
+                        <span id="btn-mark-text">MARCAR COMO FEITO</span>
                     </button>
                 </div>
 
