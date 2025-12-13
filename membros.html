@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akko Academy - Área do Aluno</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // =========================================================================
+        // ⚙️ PASSO 1: CONFIGURAÇÃO DO FIREBASE (COLE AQUI TAMBÉM)
+        // =========================================================================
+        const manualConfig = {
+         apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+         authDomain: "akko-academy.firebaseapp.com",
+         projectId: "akko-academy",
+         storageBucket: "akko-academy.firebasestorage.app",
+         messagingSenderId: "56272587692",
+         appId: "1:56272587692:web:6e62374b91269073784809"
+        };
+
+        const firebaseConfig = manualConfig.apiKey 
+            ? manualConfig 
+            : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // Inicialização
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        // =========================================================================
+
+        let currentLessons = [];
+        let currentLessonIndex = -1;
+
+        // Auth
+        const initAuth = async () => {
+             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        };
+        initAuth();
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = 'index.html';
+            } else {
+                const userName = localStorage.getItem('userName') || 'Aluno';
+                const initials = userName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
+                document.getElementById('user-avatar').innerText = initials;
+                
+                // Configurar proteção de nome para o player
+                window.currentUserInfo = {
+                    name: userName,
+                    uid: user.uid.substring(0, 6).toUpperCase()
+                };
+
+                loadContent();
+            }
+        });
+
+        // Carregar Aulas
+        function loadContent() {
+            const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
+            
+            onSnapshot(q, (snapshot) => {
+                const lessons = [];
+                snapshot.forEach((doc) => lessons.push({ id: doc.id, ...doc.data() }));
+                
+                lessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+                
+                currentLessons = lessons;
+                renderSidebar(lessons);
+                
+                if (lessons.length > 0 && currentLessonIndex === -1) {
+                    loadLesson(0);
+                } else if (lessons.length === 0) {
+                    showEmptyState();
+                }
+            });
+        }
+
+        function renderSidebar(lessons) {
+            const sidebarContent = document.getElementById('sidebar-content');
+            sidebarContent.innerHTML = '';
+
+            const modules = {};
+            lessons.forEach((lesson, index) => {
+                if (!modules[lesson.moduleName]) modules[lesson.moduleName] = [];
+                modules[lesson.moduleName].push({ ...lesson, originalIndex: index });
+            });
+
+            Object.keys(modules).forEach((moduleName, modIndex) => {
+                const details = document.createElement('details');
+                details.className = 'group';
+                if(modIndex === 0) details.setAttribute('open', '');
+
+                details.innerHTML = `
+                    <summary class="flex items-center justify-between p-3 border-2 border-doodle-dark bg-white shadow-hard-sm cursor-pointer hover:translate-x-1 transition-transform mb-2 relative">
+                        <div class="flex items-center gap-3 font-comic text-xl text-doodle-dark">
+                            <span class="w-8 h-8 flex items-center justify-center bg-gray-200 border-2 border-doodle-dark text-sm transform -rotate-3">${modIndex + 1}</span>
+                            ${moduleName.toUpperCase()}
+                        </div>
+                        <i data-lucide="chevron-down" class="w-6 h-6 text-doodle-dark group-open:rotate-180 transition-transform"></i>
+                    </summary>
+                    <div class="pl-4 ml-3 border-l-4 border-doodle-dark/20 border-dashed space-y-3 mt-2 pb-2 lessons-container"></div>
+                `;
+
+                const container = details.querySelector('.lessons-container');
+                modules[moduleName].forEach(lesson => {
+                    const btn = document.createElement('button');
+                    const isActive = lesson.originalIndex === currentLessonIndex;
+                    
+                    btn.className = `w-full text-left flex items-center gap-3 p-2 rounded border-b-2 border-transparent hover:border-doodle-dark group transition-all lesson-btn ${isActive ? 'bg-doodle-yellow border-2 border-doodle-dark shadow-sm' : 'bg-white/50 hover:bg-doodle-yellow/50'}`;
+                    btn.onclick = () => loadLesson(lesson.originalIndex);
+                    
+                    const iconHtml = isActive 
+                        ? `<div class="w-6 h-6 flex items-center justify-center bg-doodle-pink border-2 border-doodle-dark rounded-full animate-pulse"><i data-lucide="play" class="w-3 h-3 text-white fill-current ml-0.5"></i></div>`
+                        : `<div class="checkbox-wrapper relative flex items-center"><div class="w-6 h-6 border-2 border-doodle-dark bg-white flex items-center justify-center transition-all shadow-[2px_2px_0px_#2D2B38]"><i data-lucide="check" class="w-4 h-4 text-doodle-dark hidden"></i></div></div>`;
+
+                    btn.innerHTML = `
+                        ${iconHtml}
+                        <span class="font-bold text-sm text-doodle-dark font-comic tracking-wide group-hover:text-doodle-purple">${lesson.title.toUpperCase()}</span>
+                    `;
+                    container.appendChild(btn);
+                });
+                sidebarContent.appendChild(details);
+            });
+            lucide.createIcons();
+        }
+
+        window.loadLesson = function(index) {
+            if (!currentLessons[index]) return;
+            currentLessonIndex = index;
+            const lesson = currentLessons[index];
+
+            document.getElementById('lesson-title').innerText = lesson.title.toUpperCase();
+            document.getElementById('lesson-desc').innerText = lesson.description || 'Sem descrição.';
+            document.getElementById('module-bread').innerText = lesson.moduleName;
+            document.getElementById('lesson-bread').innerText = lesson.title;
+
+            renderSidebar(currentLessons);
+
+            const playerContainer = document.getElementById('video-player-container');
+            
+            if (lesson.videoUrl.includes('youtube') || lesson.videoUrl.includes('youtu.be')) {
+                let videoId = lesson.videoUrl.split('v=')[1];
+                const ampersandPosition = videoId ? videoId.indexOf('&') : -1;
+                if(ampersandPosition !== -1) videoId = videoId.substring(0, ampersandPosition);
+                if(!videoId && lesson.videoUrl.includes('youtu.be')) videoId = lesson.videoUrl.split('/').pop();
+
+                playerContainer.innerHTML = `
+                    <div class="relative w-full h-full bg-black">
+                        <iframe id="yt-player" width="100%" height="100%" src="https://www.youtube.com/embed/${videoId}?modestbranding=1&rel=0" frameborder="0" allowfullscreen></iframe>
+                        <div id="watermark-overlay" class="absolute pointer-events-none select-none font-marker text-white/20 text-xl z-50 transition-all duration-1000" style="top: 10%; left: 10%;">
+                            ${window.currentUserInfo.name} - ${window.currentUserInfo.uid}
+                        </div>
+                        <div class="absolute inset-0 z-40" oncontextmenu="return false;"></div>
+                    </div>
+                `;
+                startWatermarkAnimation();
+            } else {
+                renderCustomPlayer(playerContainer, lesson.videoUrl);
+            }
+        }
+
+        function renderCustomPlayer(container, url) {
+            container.innerHTML = `
+                <div class="relative w-full h-full group bg-black overflow-hidden select-none" oncontextmenu="return false;">
+                    <video id="custom-video" class="w-full h-full object-contain" src="${url}" controlsList="nodownload"></video>
+                    <div id="watermark-overlay" class="absolute pointer-events-none font-marker text-white/30 text-2xl z-20 whitespace-nowrap" style="top: 20%; left: 20%; text-shadow: 1px 1px 0 #000;">
+                        ${window.currentUserInfo.name} • ${window.currentUserInfo.uid}
+                    </div>
+                    <div id="start-overlay" class="absolute inset-0 flex items-center justify-center bg-black/40 z-30 cursor-pointer" onclick="togglePlay()">
+                         <button class="w-24 h-24 bg-doodle-yellow border-4 border-doodle-dark rounded-full flex items-center justify-center text-doodle-dark shadow-hard hover:scale-110 hover:bg-white transition-all transform -rotate-3">
+                            <i data-lucide="play" class="w-10 h-10 fill-current ml-1"></i>
+                        </button>
+                    </div>
+                    <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 via-black/60 to-transparent z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <div class="relative w-full h-6 mb-2 cursor-pointer group/timeline" onclick="seek(event)">
+                            <div class="absolute top-1/2 left-0 w-full h-2 bg-gray-600 rounded-full -translate-y-1/2"></div>
+                            <div id="progress-bar" class="absolute top-1/2 left-0 h-3 bg-doodle-pink border-2 border-white rounded-r-full -translate-y-1/2" style="width: 0%"></div>
+                            <div id="scrubber" class="absolute top-1/2 h-6 w-6 bg-doodle-yellow border-2 border-doodle-dark rounded-full -translate-y-1/2 shadow-sm transform hover:scale-125 transition-transform" style="left: 0%"></div>
+                        </div>
+                        <div class="flex items-center justify-between text-white font-comic tracking-wider">
+                            <div class="flex items-center gap-4">
+                                <button onclick="togglePlay()" class="hover:text-doodle-yellow transition-colors" id="play-btn">
+                                    <i data-lucide="play" class="w-8 h-8 fill-current"></i>
+                                </button>
+                                <span class="text-xl mt-1">
+                                    <span id="current-time">00:00</span> / <span id="duration">00:00</span>
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <button onclick="toggleMute()" class="hover:text-doodle-yellow" id="mute-btn">
+                                    <i data-lucide="volume-2" class="w-6 h-6"></i>
+                                </button>
+                                <button onclick="toggleFullscreen()" class="hover:text-doodle-yellow">
+                                    <i data-lucide="maximize" class="w-6 h-6"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+            setupVideoEvents();
+            startWatermarkAnimation();
+        }
+
+        window.togglePlay = () => {
+            const video = document.getElementById('custom-video');
+            const overlay = document.getElementById('start-overlay');
+            const btn = document.getElementById('play-btn');
+            if (video.paused) {
+                video.play();
+                overlay.classList.add('hidden');
+                btn.innerHTML = `<i data-lucide="pause" class="w-8 h-8 fill-current"></i>`;
+            } else {
+                video.pause();
+                btn.innerHTML = `<i data-lucide="play" class="w-8 h-8 fill-current"></i>`;
+            }
+            lucide.createIcons();
+        };
+
+        window.toggleMute = () => {
+             const video = document.getElementById('custom-video');
+             video.muted = !video.muted;
+             const icon = video.muted ? 'volume-x' : 'volume-2';
+             document.getElementById('mute-btn').innerHTML = `<i data-lucide="${icon}" class="w-6 h-6"></i>`;
+             lucide.createIcons();
+        };
+
+        window.seek = (e) => {
+            const video = document.getElementById('custom-video');
+            const timeline = e.currentTarget;
+            const percent = e.offsetX / timeline.offsetWidth;
+            video.currentTime = percent * video.duration;
+        };
+
+        window.toggleFullscreen = () => {
+            const container = document.getElementById('video-player-container');
+            if (!document.fullscreenElement) {
+                container.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        };
+
+        function setupVideoEvents() {
+            const video = document.getElementById('custom-video');
+            const progressBar = document.getElementById('progress-bar');
+            const scrubber = document.getElementById('scrubber');
+            const currentEl = document.getElementById('current-time');
+            const durationEl = document.getElementById('duration');
+
+            video.addEventListener('timeupdate', () => {
+                const percent = (video.currentTime / video.duration) * 100;
+                progressBar.style.width = `${percent}%`;
+                scrubber.style.left = `${percent}%`;
+                currentEl.innerText = formatTime(video.currentTime);
+            });
+
+            video.addEventListener('loadedmetadata', () => {
+                durationEl.innerText = formatTime(video.duration);
+            });
+
+            window.addEventListener('blur', () => {
+                if (!video.paused) window.togglePlay();
+            });
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        let watermarkInterval;
+        function startWatermarkAnimation() {
+            const wm = document.getElementById('watermark-overlay');
+            if(!wm) return;
+            if (watermarkInterval) clearInterval(watermarkInterval);
+            watermarkInterval = setInterval(() => {
+                const top = Math.random() * 80 + 10;
+                const left = Math.random() * 80 + 10;
+                wm.style.top = `${top}%`;
+                wm.style.left = `${left}%`;
+                wm.style.opacity = (Math.random() * 0.3 + 0.1).toString();
+            }, 3000);
+        }
+
+        function showEmptyState() {
+             document.getElementById('video-player-container').innerHTML = `
+                <div class="w-full h-full flex flex-col items-center justify-center bg-doodle-dark text-white font-comic text-2xl p-8 text-center gap-4">
+                    <i data-lucide="ghost" class="w-16 h-16 opacity-50"></i>
+                    <span>NADA POR AQUI AINDA...</span>
+                    <span class="text-sm font-sans opacity-70">Aguarde o professor postar novas aulas!</span>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        window.logout = () => {
+            localStorage.removeItem('userLoggedIn');
+            signOut(auth).then(() => window.location.href = 'index.html');
+        };
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        comic: ['Bangers', 'cursive'],
+                        marker: ['Permanent Marker', 'cursive'],
+                    },
+                    colors: {
+                        doodle: {
+                            pink: '#FF66C4',
+                            green: '#89F279',
+                            yellow: '#F2E058',
+                            purple: '#6C5DD3',
+                            paper: '#F8F9FD',
+                            dark: '#2D2B38',
+                        }
+                    },
+                    boxShadow: {
+                        'hard': '4px 4px 0px 0px #2D2B38',
+                        'hard-hover': '6px 6px 0px 0px #2D2B38',
+                        'hard-sm': '2px 2px 0px 0px #2D2B38',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #F8F9FD;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E");
+            color: #2D2B38;
+        }
+        
+        .custom-scroll::-webkit-scrollbar { width: 10px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #2D2B38; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #F2E058; border: 2px solid #2D2B38; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #FF66C4; }
+
+        .checkbox-wrapper input:checked + div { 
+            background-color: #89F279; 
+            transform: rotate(-5deg);
+        }
+        .checkbox-wrapper input:checked + div svg { display: block; }
+        
+        .sidebar-border { border-right: 4px solid #2D2B38; }
+        
+        .btn-doodle {
+            border: 3px solid #2D2B38;
+            box-shadow: 4px 4px 0px #2D2B38;
+            transition: all 0.1s;
+        }
+        .btn-doodle:hover {
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0px #2D2B38;
+        }
+        .btn-doodle:active {
+            transform: translate(2px, 2px);
+            box-shadow: 0px 0px 0px #2D2B38;
+        }
+
+        .tape {
+            position: absolute;
+            height: 20px;
+            width: 80px;
+            background-color: #FF66C4;
+            opacity: 0.8;
+            z-index: 10;
+        }
+        
+        details > summary { list-style: none; }
+
+        /* Estilos do Slider do Player */
+        #progress-bar { box-shadow: 0px 0px 5px rgba(255, 102, 196, 0.8); }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden font-sans">
+
+    <!-- Header Sticker -->
+    <header class="h-20 bg-doodle-yellow border-b-4 border-doodle-dark flex justify-between items-center px-6 z-30 relative shadow-hard">
+        <a href="index.html" class="flex items-center gap-2 font-comic text-4xl tracking-wide text-doodle-dark hover:scale-105 transition-transform transform -rotate-1">
+            <span class="text-doodle-pink">★</span>
+            AKKO<span class="text-white text-stroke-dark" style="-webkit-text-stroke: 1.5px #2D2B38;">ACADEMY</span>
+        </a>
+
+        <div class="flex items-center gap-6">
+            <!-- Barra de Progresso -->
+            <div class="hidden md:flex flex-col items-end mr-2">
+                <span class="font-comic text-doodle-dark text-lg mb-1 transform rotate-1">NÍVEL: 42%</span>
+                <div class="w-40 h-6 bg-white border-2 border-doodle-dark rounded-none relative shadow-hard-sm">
+                    <div class="h-full bg-doodle-green w-[42%] border-r-2 border-doodle-dark relative overflow-hidden">
+                         <div class="absolute inset-0 w-full h-full opacity-30" style="background-image: repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 6px);"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4 pl-4 border-l-4 border-doodle-dark border-dashed h-10">
+                <button onclick="logout()" class="btn-doodle bg-white px-3 py-1 font-comic text-lg hover:bg-doodle-pink hover:text-white transition-colors">
+                    SAIR
+                </button>
+                <div class="w-12 h-12 bg-doodle-purple border-3 border-doodle-dark rounded-full flex items-center justify-center font-comic text-white text-2xl shadow-hard-sm transform rotate-3" id="user-avatar">
+                    <!-- Iniciais JS -->
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <!-- Sidebar Dinâmica -->
+        <aside class="w-80 bg-white sidebar-border flex flex-col z-20 relative transform transition-transform duration-300 absolute md:relative md:translate-x-0 -translate-x-full h-full shadow-[4px_0_0_0_rgba(0,0,0,0.1)]" id="sidebar">
+            <div class="p-6 border-b-4 border-doodle-dark bg-doodle-paper relative overflow-hidden">
+                <div class="tape bg-doodle-green top-[-5px] left-10 transform -rotate-3"></div>
+                <h3 class="font-marker text-doodle-purple text-xl mb-4 transform -rotate-2 mt-2">SEUS CURSOS</h3>
+                <div class="flex items-center gap-3 p-3 bg-white border-2 border-doodle-dark shadow-hard-sm cursor-pointer hover:bg-doodle-yellow transition-colors group transform hover:-rotate-1">
+                    <div class="w-12 h-12 bg-doodle-dark text-white flex items-center justify-center border-2 border-doodle-dark group-hover:rotate-12 transition-transform">
+                        <i data-lucide="zap" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <p class="font-comic text-xl leading-none tracking-wide">Edição Pro Master</p>
+                        <p class="font-marker text-xs text-doodle-pink mt-1">Módulos Dinâmicos</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lista de Módulos (Container) -->
+            <div id="sidebar-content" class="flex-1 overflow-y-auto custom-scroll p-4 space-y-4 bg-[url('https://www.transparenttextures.com/patterns/graphy.png')]">
+                <div class="text-center p-4 font-marker text-gray-400">Carregando aulas...</div>
+            </div>
+        </aside>
+
+        <!-- Área Principal -->
+        <main class="flex-1 h-full overflow-y-auto custom-scroll relative p-4 md:p-8 bg-[#F8F9FD]">
+            <button onclick="document.getElementById('sidebar').classList.toggle('-translate-x-full')" class="md:hidden absolute top-4 left-4 z-50 bg-doodle-yellow border-2 border-doodle-dark p-2 shadow-hard-sm">
+                <i data-lucide="menu" class="w-6 h-6"></i>
+            </button>
+
+            <div class="max-w-5xl mx-auto">
+                
+                <!-- Breadcrumb -->
+                <div class="flex items-center gap-2 font-marker text-sm text-gray-500 mb-6 transform -rotate-1">
+                    <span id="module-bread" class="hover:text-doodle-pink cursor-pointer decoration-wavy underline">...</span>
+                    <i data-lucide="arrow-right" class="w-4 h-4 text-doodle-dark"></i>
+                    <span id="lesson-bread" class="bg-doodle-purple text-white px-2 py-0.5 border-2 border-doodle-dark transform rotate-2 inline-block shadow-sm">...</span>
+                </div>
+
+                <!-- Título -->
+                <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8 border-b-4 border-doodle-dark border-dashed pb-6">
+                    <div>
+                        <h1 id="lesson-title" class="font-comic text-5xl md:text-6xl text-doodle-dark mb-2 text-shadow-hard-sm" style="-webkit-text-stroke: 1px #2D2B38; color: #fff;">
+                            SELECIONE UMA AULA
+                        </h1>
+                        <p class="font-marker text-doodle-purple text-xl transform rotate-1">Clique ao lado para começar.</p>
+                    </div>
+                    <button class="btn-doodle flex items-center gap-2 px-6 py-3 bg-doodle-green font-comic text-2xl hover:bg-white transition-all transform hover:-rotate-2 whitespace-nowrap">
+                        <i data-lucide="check-square" class="w-6 h-6"></i>
+                        MARCAR COMO FEITO
+                    </button>
+                </div>
+
+                <!-- Player de Vídeo -->
+                <div id="video-player-container" class="relative w-full aspect-video bg-black border-4 border-doodle-dark shadow-[12px_12px_0px_#6C5DD3] z-10 group overflow-hidden">
+                    <div class="w-full h-full flex items-center justify-center bg-doodle-dark text-white font-comic text-2xl p-8 text-center opacity-50">
+                        AGUARDANDO SELEÇÃO...
+                    </div>
+                </div>
+
+                <!-- Descrição -->
+                <div class="mt-16 bg-white border-4 border-doodle-dark shadow-hard p-8 relative transform rotate-1">
+                    <svg class="absolute -top-6 left-8 w-12 h-20 text-gray-400 z-20" viewBox="0 0 50 100" fill="none" stroke="currentColor" stroke-width="4">
+                        <path d="M15 80 L15 30 A 10 10 0 0 1 35 30 L 35 90 A 10 10 0 0 1 15 90 L 15 80" />
+                    </svg>
+
+                    <div class="flex flex-wrap gap-4 border-b-4 border-doodle-dark mb-6 pb-2">
+                        <button class="px-6 py-2 bg-doodle-pink border-2 border-doodle-dark font-comic text-xl text-white shadow-hard-sm transform -rotate-2 hover:rotate-0 transition-transform">DESCRIÇÃO</button>
+                    </div>
+
+                    <div class="prose prose-lg max-w-none text-doodle-dark font-sans">
+                        <p id="lesson-desc" class="font-marker text-xl text-doodle-purple mb-4">...</p>
+                    </div>
+                </div>
+
+                <div class="mt-20 text-center pb-10 opacity-70">
+                    <p class="font-marker text-doodle-dark">© 2025 AKKO ACADEMY. KEEP CREATING.</p>
+                    <div class="flex justify-center gap-2 mt-2 text-doodle-pink text-2xl animate-bounce">
+                        ★ ★ ★
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
