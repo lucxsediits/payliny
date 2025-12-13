@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akko Academy - Super Admin</title>
+    <title>Akko Academy - Painel ADM</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -19,6 +19,10 @@
         // ⚙️ CONFIGURAÇÃO & CREDENCIAIS
         // =========================================================================
         const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; // 🚨 Seu email de admin
+        
+        // 🚨 COLE A URL DO SEU WEBHOOK AQUI PARA ENVIO AUTOMÁTICO DE EMAIL
+        // Ex: "https://us-central1-seu-projeto.cloudfunctions.net/handleNewSale"
+        const CLOUD_FUNCTION_URL = "https://handlenewsale-3mnemxevua-uc.a.run.app"; 
 
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
@@ -251,7 +255,7 @@
             }
         }
 
-        // 2. CRIAR ALUNO SEM DESLOGAR (Truque do App Secundário)
+        // 2. CRIAR ALUNO E ENVIAR EMAIL (Inteligente)
         window.handleCreateStudent = async (e) => {
             e.preventDefault();
             const email = document.getElementById('sale-email').value;
@@ -260,43 +264,69 @@
             const resultDiv = document.getElementById('sale-result');
 
             btn.disabled = true;
-            btn.innerText = "CRIANDO CONTA...";
+            btn.innerText = "PROCESSANDO...";
             resultDiv.innerHTML = "";
 
             try {
-                const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
-                
-                // TRUQUE: Cria um "App Secundário" para não deslogar o Admin
-                const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
-                const secondaryAuth = getAuth(secondaryApp);
-                
-                // Cria o usuário na instância secundária
-                const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPass);
-                const newUid = userCred.user.uid;
+                // MODO 1: Se tiver URL do Webhook, tenta enviar e-mail real
+                if (CLOUD_FUNCTION_URL) {
+                    btn.innerText = "ENVIANDO WEBHOOK...";
+                    
+                    const response = await fetch(CLOUD_FUNCTION_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            client: { name: name, email: email },
+                            event: "purchase_approved" // Simula evento da Hotmart/Cakto
+                        })
+                    });
 
-                // Deleta a instância secundária para limpar memória
-                // (Isso não deleta o usuário, só desconecta a sessão temporária)
-                await secondaryAuth.signOut(); // Desloga do secundário por garantia
-                
-                // Agora salva no Firestore usando a instância PRINCIPAL (Admin)
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
-                    uid: newUid,
-                    name: name,
-                    email: email,
-                    passwordTemp: tempPass, // Guarda temporariamente para mostrar na tela
-                    createdAt: serverTimestamp()
-                });
+                    if (response.ok) {
+                        resultDiv.innerHTML = `
+                            <div class="bg-green-100 p-3 border-2 border-green-500 text-sm mt-4 rounded shadow-sm">
+                                <strong class="text-green-800">✅ E-mail Disparado!</strong>
+                                <p class="text-xs text-green-700 mt-1">O servidor processou o cadastro e enviou o acesso para <em>${email}</em>.</p>
+                            </div>
+                        `;
+                    } else {
+                        throw new Error("Erro no servidor: " + await response.text());
+                    }
 
-                resultDiv.innerHTML = `
-                    <div class="bg-green-100 p-3 border-2 border-green-500 text-sm mt-4 rounded shadow-sm">
-                        <strong class="text-green-800">✅ Aluno Criado com Sucesso!</strong>
-                        <div class="mt-2 bg-white p-2 border border-gray-300 rounded font-mono text-xs">
-                            <p><strong>Login:</strong> ${email}</p>
-                            <p><strong>Senha:</strong> ${tempPass}</p>
+                } else {
+                    // MODO 2: Criação Local (Fallback se não configurar URL)
+                    btn.innerText = "CRIANDO LOCAL...";
+                    
+                    const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
+                    
+                    // Truque: App Secundário para não deslogar
+                    const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+                    const secondaryAuth = getAuth(secondaryApp);
+                    
+                    const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPass);
+                    const newUid = userCred.user.uid;
+                    await secondaryAuth.signOut(); // Limpa sessão secundária
+                    
+                    // Salva no banco
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
+                        uid: newUid,
+                        name: name,
+                        email: email,
+                        passwordTemp: tempPass,
+                        createdAt: serverTimestamp()
+                    });
+
+                    resultDiv.innerHTML = `
+                        <div class="bg-yellow-100 p-3 border-2 border-yellow-500 text-sm mt-4 rounded shadow-sm">
+                            <strong class="text-yellow-800">⚠️ Criado (Sem E-mail)</strong>
+                            <div class="mt-2 bg-white p-2 border border-gray-300 rounded font-mono text-xs">
+                                <p><strong>Login:</strong> ${email}</p>
+                                <p><strong>Senha:</strong> ${tempPass}</p>
+                            </div>
+                            <p class="text-xs text-red-600 mt-2 font-bold">O e-mail não foi enviado automaticamente (URL vazia).</p>
+                            <p class="text-xs text-gray-600">Copie e envie os dados acima para o aluno.</p>
                         </div>
-                        <p class="text-xs text-green-700 mt-2">Envie estes dados para o aluno.</p>
-                    </div>
-                `;
+                    `;
+                }
                 
                 e.target.reset();
 
