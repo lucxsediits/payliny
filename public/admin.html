@@ -11,13 +11,16 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously, createUserWithEmailAndPassword, updateProfile, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, updateProfile, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // =========================================================================
-        // ⚙️ CONFIGURAÇÃO FIREBASE
+        // ⚙️ CONFIGURAÇÃO & CREDENCIAIS DE ADMIN
         // =========================================================================
+        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; // 🚨 Defina seu email de admin aqui
+        const ADMIN_SENHA_PADRAO = "admin123"; // (Opcional: usado se quiser criar o user via código na 1ª vez)
+
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
           authDomain: "akko-academy.firebaseapp.com",
@@ -38,38 +41,99 @@
         const db = getFirestore(app);
         const storage = getStorage(app);
 
-        // VARIÁVEIS GLOBAIS
+        // --- VARIÁVEIS GLOBAIS ---
         let globalLessons = [];
         let globalStudents = [];
-        let editingLessonId = null; // Para saber se estamos editando
-        
-        // URL DO SEU WEBHOOK (CLOUD FUNCTION) - PREENCHA AQUI DEPOIS DO DEPLOY
-        // Se estiver vazio, o sistema cria o aluno localmente sem enviar email real.
-        const CLOUD_FUNCTION_URL = "https://handlenewsale-3mnemxevua-uc.a.run.app"; 
+        let editingLessonId = null;
+        let currentUser = null;
 
-        // AUTH INIT
+        // --- AUTH LÓGICA ---
+        
         const initAuth = async () => {
              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                 await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                // Mantém sessão
             }
         };
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
-            if (!user) {
-                signInAnonymously(auth);
+            if (user) {
+                // Verifica se é o admin correto (Segurança simples de frontend)
+                // Idealmente, use Custom Claims no backend, mas isso serve para MVP
+                if(user.email === ADMIN_EMAIL_PERMITIDO) {
+                    currentUser = user;
+                    showAdminPanel();
+                    initRealtimeListeners();
+                } else {
+                    alert("Acesso negado: Este usuário não é administrador.");
+                    signOut(auth);
+                    showLoginScreen();
+                }
             } else {
-                initRealtimeListeners();
+                showLoginScreen();
             }
         });
 
-        // =========================================================================
-        // 🔥 LÓGICA DE DADOS (REALTIME)
-        // =========================================================================
+        window.handleAdminLogin = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const pass = document.getElementById('login-pass').value;
+            const btn = document.getElementById('btn-login');
+            const errorMsg = document.getElementById('login-error');
+
+            btn.disabled = true;
+            btn.innerText = "ENTRANDO...";
+            errorMsg.classList.add('hidden');
+
+            try {
+                // Tenta logar
+                await signInWithEmailAndPassword(auth, email, pass);
+                // O onAuthStateChanged vai lidar com o resto
+            } catch (error) {
+                console.error(error);
+                let msg = "Erro ao entrar.";
+                if(error.code === 'auth/user-not-found') {
+                    // Fallback: Se o admin não existe, tenta criar (SÓ PARA SETUP INICIAL)
+                    // Remova este bloco em produção se quiser mais segurança
+                    if(email === ADMIN_EMAIL_PERMITIDO && confirm("Admin não encontrado. Deseja criar esta conta agora?")) {
+                        try {
+                            await createUserWithEmailAndPassword(auth, email, pass);
+                            return; // Sucesso, o listener vai pegar
+                        } catch(createErr) {
+                            msg = "Erro ao criar admin: " + createErr.message;
+                        }
+                    } else {
+                        msg = "Usuário não encontrado.";
+                    }
+                } else if (error.code === 'auth/wrong-password') {
+                    msg = "Senha incorreta.";
+                }
+                errorMsg.innerText = msg;
+                errorMsg.classList.remove('hidden');
+                btn.disabled = false;
+                btn.innerText = "ENTRAR NO PAINEL";
+            }
+        };
+
+        window.handleLogout = () => {
+            signOut(auth);
+            window.location.reload();
+        };
+
+        function showLoginScreen() {
+            document.getElementById('login-screen').classList.remove('hidden');
+            document.getElementById('admin-panel').classList.add('hidden');
+        }
+
+        function showAdminPanel() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('admin-panel').classList.remove('hidden');
+            document.getElementById('admin-email-display').innerText = currentUser.email;
+        }
+
+        // --- REALTIME DATA ---
         function initRealtimeListeners() {
-            // Ouvinte de Aulas
+            // Aulas
             const qLessons = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
             onSnapshot(qLessons, (snapshot) => {
                 globalLessons = [];
@@ -81,12 +145,12 @@
                 updateModuleDatalist();
             });
 
-            // Ouvinte de Alunos
+            // Alunos
             const qStudents = query(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
             onSnapshot(qStudents, (snapshot) => {
                 globalStudents = [];
                 snapshot.forEach(doc => globalStudents.push({id: doc.id, ...doc.data()}));
-                globalStudents.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)); // Recentes primeiro
+                globalStudents.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 
                 updateDashboardStats();
                 renderStudentsTable();
@@ -97,8 +161,6 @@
         function updateDashboardStats() {
             document.getElementById('count-lessons').innerText = globalLessons.length;
             document.getElementById('count-students').innerText = globalStudents.length;
-            
-            // Conta módulos únicos
             const uniqueModules = new Set(globalLessons.map(l => l.moduleName));
             document.getElementById('count-modules').innerText = uniqueModules.size;
         }
@@ -114,44 +176,31 @@
             });
         }
 
-        // --- RENDERIZAÇÃO DE TABELAS ---
-        
-        // 1. AULAS
+        // --- RENDER TABLES ---
         window.renderLessonsTable = (filter = "") => {
             const container = document.getElementById('lessons-table-body');
             container.innerHTML = '';
-            
             const filtered = globalLessons.filter(l => 
                 l.title.toLowerCase().includes(filter.toLowerCase()) || 
                 l.moduleName.toLowerCase().includes(filter.toLowerCase())
             );
 
             if(filtered.length === 0) {
-                container.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`;
-                return;
+                container.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`; return;
             }
 
             filtered.forEach(lesson => {
                 const tr = document.createElement('tr');
                 tr.className = "border-b border-gray-200 hover:bg-gray-50";
-                
-                // Verifica se tem anexo
-                const attachmentIcon = lesson.attachmentUrl 
-                    ? `<a href="${lesson.attachmentUrl}" target="_blank" class="text-blue-500 hover:text-blue-700" title="Ver Anexo"><i data-lucide="paperclip" class="w-4 h-4 inline"></i></a>` 
-                    : `<span class="text-gray-300">-</span>`;
-
+                const attachIcon = lesson.attachmentUrl ? `<a href="${lesson.attachmentUrl}" target="_blank" class="text-blue-500"><i data-lucide="paperclip" class="w-4 h-4 inline"></i></a>` : `<span class="text-gray-300">-</span>`;
                 tr.innerHTML = `
                     <td class="p-3 font-comic text-doodle-purple">${lesson.moduleName}</td>
                     <td class="p-3 font-bold text-gray-700">${lesson.title}</td>
                     <td class="p-3 text-xs font-mono text-gray-500 truncate max-w-[150px]">${lesson.professor}</td>
-                    <td class="p-3 text-center">${attachmentIcon}</td>
+                    <td class="p-3 text-center">${attachIcon}</td>
                     <td class="p-3 flex gap-2 justify-end">
-                        <button onclick="openEditLesson('${lesson.id}')" class="p-1 text-blue-500 hover:bg-blue-100 rounded" title="Editar">
-                            <i data-lucide="pencil" class="w-4 h-4"></i>
-                        </button>
-                        <button onclick="deleteDocById('lessons', '${lesson.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded" title="Excluir">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                        </button>
+                        <button onclick="openEditLesson('${lesson.id}')" class="p-1 text-blue-500 hover:bg-blue-100 rounded"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                        <button onclick="deleteDocById('lessons', '${lesson.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </td>
                 `;
                 container.appendChild(tr);
@@ -159,19 +208,16 @@
             lucide.createIcons();
         }
 
-        // 2. ALUNOS
         window.renderStudentsTable = (filter = "") => {
             const container = document.getElementById('students-table-body');
             container.innerHTML = '';
-
             const filtered = globalStudents.filter(s => 
                 (s.name || "").toLowerCase().includes(filter.toLowerCase()) || 
                 (s.email || "").toLowerCase().includes(filter.toLowerCase())
             );
 
             if(filtered.length === 0) {
-                container.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`;
-                return;
+                container.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`; return;
             }
 
             filtered.forEach(student => {
@@ -180,17 +226,13 @@
                 tr.className = "border-b border-gray-200 hover:bg-gray-50";
                 tr.innerHTML = `
                     <td class="p-3 flex items-center gap-2">
-                        <div class="w-8 h-8 rounded-full bg-doodle-yellow border border-black flex items-center justify-center font-bold text-xs">
-                            ${(student.name || '?').charAt(0).toUpperCase()}
-                        </div>
+                        <div class="w-8 h-8 rounded-full bg-doodle-yellow border border-black flex items-center justify-center font-bold text-xs">${(student.name || '?').charAt(0).toUpperCase()}</div>
                         <span class="font-bold text-gray-700">${student.name || 'Sem Nome'}</span>
                     </td>
                     <td class="p-3 text-sm text-gray-600">${student.email}</td>
                     <td class="p-3 text-xs font-mono text-gray-400">${date}</td>
                     <td class="p-3 text-right">
-                        <button onclick="deleteDocById('students', '${student.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded" title="Remover Acesso">
-                            <i data-lucide="user-x" class="w-4 h-4"></i>
-                        </button>
+                        <button onclick="deleteDocById('students', '${student.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded"><i data-lucide="user-x" class="w-4 h-4"></i></button>
                     </td>
                 `;
                 container.appendChild(tr);
@@ -198,72 +240,50 @@
             lucide.createIcons();
         }
 
-
-        // --- AÇÕES CRUD ---
-
-        // Deletar genérico
+        // --- ACTIONS ---
         window.deleteDocById = async (col, id) => {
-            if(confirm("Tem certeza absoluta? Não dá pra desfazer.")) {
-                try {
-                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id));
-                } catch(e) { alert("Erro: " + e.message); }
+            if(confirm("Tem certeza absoluta?")) {
+                try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id)); } 
+                catch(e) { alert("Erro: " + e.message); }
             }
         }
 
-        // Modal de Aulas (Criar ou Editar)
+        // Lesson Modal
         window.openCreateLesson = () => {
             editingLessonId = null;
             document.getElementById('lesson-modal-title').innerText = "NOVA AULA";
             document.getElementById('lesson-form').reset();
-            
-            // Resetar visualização de arquivo existente
             document.getElementById('current-attachment').classList.add('hidden');
-            
             document.getElementById('lesson-modal').classList.remove('hidden');
         }
 
         window.openEditLesson = (id) => {
             const lesson = globalLessons.find(l => l.id === id);
             if(!lesson) return;
-
             editingLessonId = id;
             document.getElementById('lesson-modal-title').innerText = "EDITAR AULA";
-            
-            // Preencher campos
             document.getElementById('inp-module').value = lesson.moduleName;
             document.getElementById('inp-title').value = lesson.title;
             document.getElementById('inp-prof').value = lesson.professor;
             document.getElementById('inp-desc').value = lesson.description || '';
-            
-            // Lógica URL/Arquivo de Vídeo
             if(lesson.videoUrl) {
                 document.getElementById('inp-url').value = lesson.videoUrl;
                 toggleVideoInput('url'); 
             }
-
-            // Lógica de Anexo
-            const currentAttach = document.getElementById('current-attachment');
-            const attachLink = document.getElementById('attachment-link');
             if(lesson.attachmentUrl) {
-                currentAttach.classList.remove('hidden');
-                attachLink.href = lesson.attachmentUrl;
-                attachLink.innerText = "Baixar Arquivo Atual";
+                document.getElementById('current-attachment').classList.remove('hidden');
+                document.getElementById('attachment-link').href = lesson.attachmentUrl;
             } else {
-                currentAttach.classList.add('hidden');
+                document.getElementById('current-attachment').classList.add('hidden');
             }
-
             document.getElementById('lesson-modal').classList.remove('hidden');
         }
 
-        window.closeLessonModal = () => {
-            document.getElementById('lesson-modal').classList.add('hidden');
-        }
+        window.closeLessonModal = () => document.getElementById('lesson-modal').classList.add('hidden');
 
-        // Salvar Aula (Create ou Update)
         window.handleSaveLesson = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('btn-save-lesson');
-            const originalText = btn.innerText;
             btn.innerText = "SALVANDO...";
             btn.disabled = true;
 
@@ -272,184 +292,123 @@
                 const moduleName = document.getElementById('inp-module').value;
                 const professor = document.getElementById('inp-prof').value;
                 const description = document.getElementById('inp-desc').value;
-                
-                // 1. Processar Vídeo
                 let videoUrl = document.getElementById('inp-url').value;
                 const fileInput = document.getElementById('inp-file');
+                const attachInput = document.getElementById('inp-attachment');
 
                 if (fileInput.files.length > 0) {
                     btn.innerText = "ENVIANDO VÍDEO...";
-                    const storageRef = ref(storage, `artifacts/${appId}/public/videos/${Date.now()}_${fileInput.files[0].name}`);
-                    const snapshot = await uploadBytes(storageRef, fileInput.files[0]);
-                    videoUrl = await getDownloadURL(snapshot.ref);
+                    const snap = await uploadBytes(ref(storage, `artifacts/${appId}/public/videos/${Date.now()}_${fileInput.files[0].name}`), fileInput.files[0]);
+                    videoUrl = await getDownloadURL(snap.ref);
+                }
+                
+                let attachmentUrl = null;
+                if (attachInput.files.length > 0) {
+                    btn.innerText = "ENVIANDO ANEXO...";
+                    const snapAtt = await uploadBytes(ref(storage, `artifacts/${appId}/public/attachments/${Date.now()}_${attachInput.files[0].name}`), attachInput.files[0]);
+                    attachmentUrl = await getDownloadURL(snapAtt.ref);
                 }
 
                 if (!videoUrl && !editingLessonId) throw new Error("Vídeo obrigatório.");
 
-                // 2. Processar Anexo (Novo)
-                let attachmentUrl = null;
-                const attachInput = document.getElementById('inp-attachment');
-                
-                if (attachInput.files.length > 0) {
-                    btn.innerText = "ENVIANDO ANEXO...";
-                    const attachRef = ref(storage, `artifacts/${appId}/public/attachments/${Date.now()}_${attachInput.files[0].name}`);
-                    const snapshotAttach = await uploadBytes(attachRef, attachInput.files[0]);
-                    attachmentUrl = await getDownloadURL(snapshotAttach.ref);
-                }
-
-                // 3. Montar Objeto
                 const data = { title, moduleName, professor, videoUrl, description };
-                if (attachmentUrl) data.attachmentUrl = attachmentUrl; // Só adiciona se tiver novo upload
+                if (attachmentUrl) data.attachmentUrl = attachmentUrl;
 
-                // Se for criação, adiciona data
                 if(!editingLessonId) {
                     data.createdAt = serverTimestamp();
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'), data);
                 } else {
-                    // Update - Mantém anexo antigo se não enviou novo
-                    // O merge: true não é automático com updateDoc, mas updateDoc só muda os campos passados.
-                    // Se attachmentUrl for null, ele não vai para o objeto data acima se não enviarmos.
-                    // Para apagar um anexo seria necessário outra lógica, aqui assumimos que novo substitui ou mantém.
                     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lessons', editingLessonId), data);
                 }
-
                 closeLessonModal();
-                alert(editingLessonId ? "Aula atualizada!" : "Aula criada!");
-
+                alert(editingLessonId ? "Atualizado!" : "Criado!");
             } catch (err) {
                 console.error(err);
                 alert("Erro: " + err.message);
             } finally {
-                btn.innerText = originalText;
+                btn.innerText = "SALVAR DADOS";
                 btn.disabled = false;
             }
         }
 
-        // Criar Aluno (Simulação de Venda + Webhook Trigger)
-        window.handleCreateStudent = async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('sale-email').value;
-            const name = document.getElementById('sale-name').value;
-            const btn = e.target.querySelector('button');
-            const resultDiv = document.getElementById('sale-result');
+        // --- TEST TOOLS (Antigo test.html) ---
+        const firstNames = ["Ana", "Bruno", "Carlos", "Diana", "Eduardo"];
+        const lastNames = ["Silva", "Santos", "Oliveira", "Souza", "Pereira"];
 
+        window.generateTestData = async () => {
+            const btn = document.getElementById('btn-generate');
+            const log = document.getElementById('log-generate');
             btn.disabled = true;
-            btn.innerText = "CRIANDO...";
+            btn.innerText = "GERANDO...";
+            log.innerHTML = "";
 
             try {
-                // OPÇÃO 1: Se você tiver a URL da Cloud Function, usa ela para simular tudo (inclusive e-mail)
-                if (CLOUD_FUNCTION_URL) {
-                    const response = await fetch(CLOUD_FUNCTION_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            client: { name: name, email: email },
-                            event: "purchase_approved" // Simula evento da Hotmart/Cakto
-                        })
-                    });
-
-                    if (response.ok) {
-                        resultDiv.innerHTML = `
-                            <div class="bg-green-100 p-2 border border-green-500 text-xs mt-2 rounded">
-                                <strong>Sucesso!</strong><br>O servidor processou o cadastro e enviou o e-mail para <em>${email}</em>.
-                            </div>
-                        `;
-                    } else {
-                        throw new Error("Erro no servidor: " + await response.text());
-                    }
-
-                } else {
-                    // OPÇÃO 2: Criação Manual Local (Sem envio de e-mail real pelo frontend)
-                    const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
-                    const userCred = await createUserWithEmailAndPassword(auth, email, tempPass);
-                    await updateProfile(userCred.user, { displayName: name });
-
+                for (let i = 0; i < 5; i++) {
+                    const name = `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
+                    const email = `teste.${Math.floor(Math.random() * 1000)}@exemplo.com`;
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
-                        uid: userCred.user.uid,
-                        name, email,
-                        passwordTemp: tempPass,
-                        createdAt: serverTimestamp()
+                        name: name, email: email, uid: "sim_" + Date.now(), createdAt: serverTimestamp()
                     });
-
-                    resultDiv.innerHTML = `
-                        <div class="bg-yellow-100 p-2 border border-yellow-500 text-xs mt-2 rounded">
-                            <strong>Criado Localmente!</strong><br>Login: ${email}<br>Senha: ${tempPass}<br>
-                            <span class="text-red-500 font-bold">Nota: O e-mail NÃO foi enviado pois a URL do Webhook não foi configurada no código.</span>
-                        </div>
-                    `;
+                    log.innerHTML += `<div class="text-green-600 text-xs">✔ ${name}</div>`;
                 }
-                
-                e.target.reset();
-            } catch (err) {
-                console.error(err);
-                let msg = err.message;
-                if(err.code === 'auth/email-already-in-use') msg = "Este email já possui cadastro!";
-                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold">${msg}</div>`;
+            } catch (error) {
+                log.innerHTML += `<div class="text-red-500">Erro: ${error.message}</div>`;
             } finally {
                 btn.disabled = false;
-                btn.innerText = "CADASTRAR";
+                btn.innerText = "GERAR +5 ALUNOS";
             }
-        }
+        };
 
+        window.testWebhook = async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('webhook-url').value;
+            const email = document.getElementById('webhook-email').value;
+            const name = document.getElementById('webhook-name').value;
+            const log = document.getElementById('log-webhook');
+            
+            if(!url) { alert("Cole a URL da Function!"); return; }
+            log.innerHTML = "Enviando...";
+            
+            try {
+                const res = await fetch(url, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client: { name, email }, event: "purchase_approved" })
+                });
+                const text = await res.text();
+                log.innerHTML = res.ok ? `<span class="text-green-600">SUCESSO: ${text}</span>` : `<span class="text-red-600">ERRO: ${text}</span>`;
+            } catch (error) {
+                log.innerHTML = `<span class="text-red-600">FALHA: ${error.message}</span>`;
+            }
+        };
 
-        // UTILS UI
+        // --- UI UTILS ---
         window.toggleVideoInput = (type) => {
-            const containerUrl = document.getElementById('container-url');
-            const containerFile = document.getElementById('container-file');
-            const btnUrl = document.getElementById('tab-url');
-            const btnFile = document.getElementById('tab-file');
-
-            if (type === 'url') {
-                containerUrl.classList.remove('hidden');
-                containerFile.classList.add('hidden');
-                btnUrl.classList.add('bg-doodle-yellow');
-                btnFile.classList.remove('bg-doodle-yellow');
-            } else {
-                containerUrl.classList.add('hidden');
-                containerFile.classList.remove('hidden');
-                btnFile.classList.add('bg-doodle-yellow');
-                btnUrl.classList.remove('bg-doodle-yellow');
-            }
+            document.getElementById('container-url').classList.toggle('hidden', type !== 'url');
+            document.getElementById('container-file').classList.toggle('hidden', type !== 'file');
+            document.getElementById('tab-url').className = type === 'url' ? "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow" : "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white";
+            document.getElementById('tab-file').className = type === 'file' ? "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow" : "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white";
         }
 
         window.switchTab = (tabId) => {
-            // Esconde todas as seções
-            ['dashboard', 'lessons', 'students'].forEach(id => {
+            ['dashboard', 'lessons', 'students', 'tests'].forEach(id => {
                 document.getElementById('view-'+id).classList.add('hidden');
                 document.getElementById('nav-'+id).classList.remove('bg-doodle-pink', 'text-white', 'scale-105');
-                document.getElementById('nav-'+id).classList.add('hover:bg-gray-100');
             });
-
-            // Mostra a ativa
             document.getElementById('view-'+tabId).classList.remove('hidden');
-            const activeBtn = document.getElementById('nav-'+tabId);
-            activeBtn.classList.add('bg-doodle-pink', 'text-white', 'scale-105');
-            activeBtn.classList.remove('hover:bg-gray-100');
+            document.getElementById('nav-'+tabId).classList.add('bg-doodle-pink', 'text-white', 'scale-105');
         }
 
         window.filterLessons = (e) => renderLessonsTable(e.target.value);
         window.filterStudents = (e) => renderStudentsTable(e.target.value);
-
     </script>
 
     <script>
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        comic: ['Bangers', 'cursive'],
-                        marker: ['Permanent Marker', 'cursive'],
-                    },
-                    colors: {
-                        doodle: {
-                            pink: '#FF66C4', green: '#89F279', yellow: '#F2E058', purple: '#6C5DD3', paper: '#F8F9FD', dark: '#2D2B38',
-                        }
-                    },
-                    boxShadow: {
-                        'hard': '4px 4px 0px 0px #2D2B38',
-                        'hard-sm': '2px 2px 0px 0px #2D2B38',
-                    }
+                    fontFamily: { sans: ['Inter', 'sans-serif'], comic: ['Bangers', 'cursive'], marker: ['Permanent Marker', 'cursive'] },
+                    colors: { doodle: { pink: '#FF66C4', green: '#89F279', yellow: '#F2E058', purple: '#6C5DD3', paper: '#F8F9FD', dark: '#2D2B38' } },
+                    boxShadow: { 'hard': '4px 4px 0px 0px #2D2B38', 'hard-sm': '2px 2px 0px 0px #2D2B38' }
                 }
             }
         }
@@ -457,249 +416,172 @@
 </head>
 <body class="bg-[#F3F4F6] text-[#2D2B38] font-sans h-screen flex overflow-hidden">
 
-    <!-- SIDEBAR -->
-    <aside class="w-64 bg-white border-r-4 border-doodle-dark flex flex-col z-20 shadow-hard">
-        <div class="h-20 flex items-center justify-center border-b-4 border-doodle-dark bg-doodle-yellow">
-            <span class="font-comic text-3xl tracking-wide">AKKO <span class="text-white text-stroke-dark" style="-webkit-text-stroke: 1px black;">ADMIN</span></span>
+    <!-- LOGIN SCREEN (OVERLAY) -->
+    <div id="login-screen" class="fixed inset-0 z-50 bg-doodle-dark flex items-center justify-center">
+        <div class="bg-white p-8 border-4 border-doodle-pink shadow-[10px_10px_0px_#fff] max-w-sm w-full transform rotate-1">
+            <h1 class="font-comic text-4xl text-center mb-6">AREA RESTRITA</h1>
+            <form onsubmit="handleAdminLogin(event)" class="space-y-4">
+                <div>
+                    <label class="font-bold text-sm">EMAIL ADMIN</label>
+                    <input type="email" id="login-email" class="w-full border-2 border-doodle-dark p-2" placeholder="admin@akko.com" required>
+                </div>
+                <div>
+                    <label class="font-bold text-sm">SENHA</label>
+                    <input type="password" id="login-pass" class="w-full border-2 border-doodle-dark p-2" placeholder="********" required>
+                </div>
+                <button type="submit" id="btn-login" class="w-full bg-doodle-yellow font-comic text-2xl py-2 border-2 border-doodle-dark hover:bg-doodle-pink hover:text-white transition-colors">
+                    ENTRAR NO PAINEL
+                </button>
+            </form>
+            <p id="login-error" class="text-red-500 font-bold text-center mt-4 hidden text-sm"></p>
         </div>
+    </div>
 
-        <nav class="flex-1 p-4 space-y-2">
-            <button id="nav-dashboard" onclick="switchTab('dashboard')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all bg-doodle-pink text-white scale-105 shadow-sm flex items-center gap-3">
-                <i data-lucide="layout-dashboard" class="w-6 h-6"></i> DASHBOARD
-            </button>
-            <button id="nav-lessons" onclick="switchTab('lessons')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all hover:bg-gray-100 flex items-center gap-3">
-                <i data-lucide="video" class="w-6 h-6"></i> AULAS E MÓDULOS
-            </button>
-            <button id="nav-students" onclick="switchTab('students')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all hover:bg-gray-100 flex items-center gap-3">
-                <i data-lucide="users" class="w-6 h-6"></i> ALUNOS
-            </button>
-        </nav>
-
-        <div class="p-4 border-t-4 border-doodle-dark bg-gray-50">
-            <a href="index.html" class="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-red-500">
-                <i data-lucide="log-out" class="w-4 h-4"></i> Sair do Painel
-            </a>
-        </div>
-    </aside>
-
-    <!-- MAIN CONTENT -->
-    <main class="flex-1 overflow-y-auto relative bg-[url('https://www.transparenttextures.com/patterns/graphy.png')]">
-        
-        <!-- HEADER MOBILE/TITLE -->
-        <header class="h-20 flex items-center px-8 justify-between">
-            <h2 class="font-marker text-3xl text-doodle-dark/50">Painel de Controle</h2>
-            <div class="bg-white px-4 py-1 rounded-full border-2 border-doodle-dark shadow-sm text-sm font-bold">
-                Admin Logado
+    <!-- ADMIN PANEL (HIDDEN BY DEFAULT) -->
+    <div id="admin-panel" class="hidden flex w-full h-full">
+        <!-- SIDEBAR -->
+        <aside class="w-64 bg-white border-r-4 border-doodle-dark flex flex-col z-20 shadow-hard">
+            <div class="h-20 flex items-center justify-center border-b-4 border-doodle-dark bg-doodle-yellow">
+                <span class="font-comic text-3xl tracking-wide">AKKO <span class="text-white text-stroke-dark" style="-webkit-text-stroke: 1px black;">ADMIN</span></span>
             </div>
-        </header>
 
-        <div class="p-8 pt-0">
+            <nav class="flex-1 p-4 space-y-2">
+                <button id="nav-dashboard" onclick="switchTab('dashboard')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all bg-doodle-pink text-white scale-105 shadow-sm flex items-center gap-3">
+                    <i data-lucide="layout-dashboard" class="w-6 h-6"></i> DASHBOARD
+                </button>
+                <button id="nav-lessons" onclick="switchTab('lessons')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all hover:bg-gray-100 flex items-center gap-3">
+                    <i data-lucide="video" class="w-6 h-6"></i> AULAS
+                </button>
+                <button id="nav-students" onclick="switchTab('students')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all hover:bg-gray-100 flex items-center gap-3">
+                    <i data-lucide="users" class="w-6 h-6"></i> ALUNOS
+                </button>
+                <button id="nav-tests" onclick="switchTab('tests')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all hover:bg-gray-100 flex items-center gap-3 text-gray-500">
+                    <i data-lucide="flask-conical" class="w-6 h-6"></i> LAB DE TESTES
+                </button>
+            </nav>
+
+            <div class="p-4 border-t-4 border-doodle-dark bg-gray-50">
+                <div class="text-xs text-gray-400 mb-2 truncate" id="admin-email-display"></div>
+                <button onclick="handleLogout()" class="flex items-center gap-2 text-sm font-bold text-red-500 hover:underline w-full">
+                    <i data-lucide="log-out" class="w-4 h-4"></i> SAIR
+                </button>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 overflow-y-auto relative bg-[url('https://www.transparenttextures.com/patterns/graphy.png')]">
             
-            <!-- VIEW: DASHBOARD -->
-            <div id="view-dashboard" class="space-y-6">
-                <!-- Stats Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform hover:-translate-y-1 transition-transform">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <p class="font-comic text-xl text-gray-500">TOTAL DE ALUNOS</p>
-                                <h3 id="count-students" class="font-comic text-6xl text-doodle-purple">0</h3>
-                            </div>
-                            <div class="p-3 bg-doodle-purple text-white rounded-full border-2 border-doodle-dark"><i data-lucide="users" class="w-8 h-8"></i></div>
+            <header class="h-20 flex items-center px-8 justify-between">
+                <h2 class="font-marker text-3xl text-doodle-dark/50">Painel de Controle</h2>
+                <div class="bg-doodle-green px-3 py-1 rounded-full border-2 border-doodle-dark shadow-sm text-xs font-bold">ONLINE</div>
+            </header>
+
+            <div class="p-8 pt-0">
+                
+                <!-- VIEW: DASHBOARD -->
+                <div id="view-dashboard" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform hover:-translate-y-1 transition-transform">
+                            <div class="flex justify-between"><div><p class="font-comic text-xl text-gray-500">ALUNOS</p><h3 id="count-students" class="font-comic text-6xl text-doodle-purple">0</h3></div><div class="p-3 bg-doodle-purple text-white rounded-full border-2 border-doodle-dark h-fit"><i data-lucide="users"></i></div></div>
+                        </div>
+                        <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform hover:-translate-y-1 transition-transform">
+                            <div class="flex justify-between"><div><p class="font-comic text-xl text-gray-500">AULAS</p><h3 id="count-lessons" class="font-comic text-6xl text-doodle-pink">0</h3></div><div class="p-3 bg-doodle-pink text-white rounded-full border-2 border-doodle-dark h-fit"><i data-lucide="play-circle"></i></div></div>
+                        </div>
+                        <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform hover:-translate-y-1 transition-transform">
+                            <div class="flex justify-between"><div><p class="font-comic text-xl text-gray-500">MÓDULOS</p><h3 id="count-modules" class="font-comic text-6xl text-doodle-yellow">0</h3></div><div class="p-3 bg-doodle-yellow text-doodle-dark rounded-full border-2 border-doodle-dark h-fit"><i data-lucide="layers"></i></div></div>
                         </div>
                     </div>
-                    <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform hover:-translate-y-1 transition-transform">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <p class="font-comic text-xl text-gray-500">AULAS POSTADAS</p>
-                                <h3 id="count-lessons" class="font-comic text-6xl text-doodle-pink">0</h3>
-                            </div>
-                            <div class="p-3 bg-doodle-pink text-white rounded-full border-2 border-doodle-dark"><i data-lucide="play-circle" class="w-8 h-8"></i></div>
-                        </div>
-                    </div>
-                    <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform hover:-translate-y-1 transition-transform">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <p class="font-comic text-xl text-gray-500">MÓDULOS ATIVOS</p>
-                                <h3 id="count-modules" class="font-comic text-6xl text-doodle-yellow">0</h3>
-                            </div>
-                            <div class="p-3 bg-doodle-yellow text-doodle-dark rounded-full border-2 border-doodle-dark"><i data-lucide="layers" class="w-8 h-8"></i></div>
-                        </div>
+                    <div class="bg-doodle-paper border-4 border-doodle-dark p-6 shadow-hard-sm flex gap-4">
+                        <button onclick="switchTab('lessons'); openCreateLesson()" class="px-6 py-3 bg-doodle-green border-2 border-doodle-dark font-comic text-xl shadow-sm hover:scale-105 transition-transform">+ NOVA AULA</button>
+                        <a href="membros.html" target="_blank" class="px-6 py-3 bg-white border-2 border-doodle-dark font-comic text-xl shadow-sm hover:scale-105 transition-transform text-doodle-dark">VER SITE</a>
                     </div>
                 </div>
 
-                <!-- Quick Actions -->
-                <div class="bg-doodle-paper border-4 border-doodle-dark p-6 shadow-hard-sm">
-                    <h3 class="font-marker text-2xl mb-4">Acesso Rápido</h3>
-                    <div class="flex gap-4">
-                        <button onclick="switchTab('lessons'); openCreateLesson()" class="px-6 py-3 bg-doodle-green border-2 border-doodle-dark font-comic text-xl shadow-sm hover:scale-105 transition-transform">
-                            + NOVA AULA
-                        </button>
-                        <a href="membros.html" target="_blank" class="px-6 py-3 bg-white border-2 border-doodle-dark font-comic text-xl shadow-sm hover:scale-105 transition-transform text-doodle-dark">
-                            VER SITE COMO ALUNO
-                        </a>
+                <!-- VIEW: LESSONS -->
+                <div id="view-lessons" class="hidden flex-col h-full">
+                    <div class="flex justify-between items-center mb-6">
+                        <h1 class="font-comic text-4xl text-doodle-dark">GERENCIAR AULAS</h1>
+                        <button onclick="openCreateLesson()" class="bg-doodle-green text-doodle-dark px-6 py-2 font-comic text-xl border-2 border-doodle-dark shadow-hard hover:bg-white">+ NOVA AULA</button>
                     </div>
-                </div>
-            </div>
-
-            <!-- VIEW: LESSONS -->
-            <div id="view-lessons" class="hidden flex-col h-full">
-                <div class="flex justify-between items-center mb-6">
-                    <h1 class="font-comic text-4xl text-doodle-dark">GERENCIAR AULAS</h1>
-                    <button onclick="openCreateLesson()" class="bg-doodle-green text-doodle-dark px-6 py-2 font-comic text-xl border-2 border-doodle-dark shadow-hard hover:bg-white transition-colors">
-                        + NOVA AULA
-                    </button>
-                </div>
-
-                <div class="bg-white border-4 border-doodle-dark shadow-hard flex-1 flex flex-col min-h-[500px]">
-                    <!-- Toolbar -->
-                    <div class="p-4 border-b-2 border-doodle-dark bg-gray-50 flex gap-4">
-                        <div class="relative flex-1">
-                            <i data-lucide="search" class="absolute left-3 top-3 w-5 h-5 text-gray-400"></i>
-                            <input type="text" onkeyup="filterLessons(event)" placeholder="Buscar por título ou módulo..." class="w-full pl-10 pr-4 py-2 border-2 border-doodle-dark rounded focus:outline-none focus:border-doodle-purple">
+                    <div class="bg-white border-4 border-doodle-dark shadow-hard flex-1 flex flex-col min-h-[500px]">
+                        <div class="p-4 border-b-2 border-doodle-dark bg-gray-50 flex gap-4">
+                            <div class="relative flex-1"><i data-lucide="search" class="absolute left-3 top-3 w-5 h-5 text-gray-400"></i><input type="text" onkeyup="filterLessons(event)" placeholder="Buscar..." class="w-full pl-10 pr-4 py-2 border-2 border-doodle-dark rounded"></div>
                         </div>
-                    </div>
-
-                    <!-- Table Header -->
-                    <div class="grid grid-cols-[1fr_2fr_1fr_100px_100px] bg-doodle-yellow border-b-2 border-doodle-dark font-comic text-lg p-2 px-4">
-                        <div>MÓDULO</div>
-                        <div>TÍTULO DA AULA</div>
-                        <div>PROFESSOR</div>
-                        <div class="text-center">ANEXO</div>
-                        <div class="text-right">AÇÕES</div>
-                    </div>
-
-                    <!-- Table Body -->
-                    <div class="overflow-y-auto flex-1 custom-scroll">
-                        <table class="w-full text-left border-collapse">
-                            <tbody id="lessons-table-body">
-                                <!-- JS Populates Here -->
-                            </tbody>
-                        </table>
+                        <div class="grid grid-cols-[1fr_2fr_1fr_100px_100px] bg-doodle-yellow border-b-2 border-doodle-dark font-comic text-lg p-2 px-4">
+                            <div>MÓDULO</div><div>TÍTULO</div><div>PROF.</div><div class="text-center">ANEXO</div><div class="text-right">AÇÕES</div>
+                        </div>
+                        <div class="overflow-y-auto flex-1 custom-scroll"><table class="w-full text-left border-collapse"><tbody id="lessons-table-body"></tbody></table></div>
                     </div>
                 </div>
-            </div>
 
-            <!-- VIEW: STUDENTS -->
-            <div id="view-students" class="hidden flex-col h-full">
-                <div class="grid md:grid-cols-3 gap-6 h-full">
-                    
-                    <!-- Cadastro Rápido -->
-                    <div class="col-span-1 bg-white border-4 border-doodle-dark shadow-hard p-6 h-fit">
-                        <div class="flex items-center gap-2 mb-4 border-b-2 border-dashed border-gray-300 pb-2">
-                            <i data-lucide="user-plus" class="w-6 h-6 text-doodle-purple"></i>
-                            <h2 class="font-comic text-2xl">NOVO ALUNO</h2>
-                        </div>
-                        <form onsubmit="handleCreateStudent(event)" class="space-y-4">
-                            <div>
-                                <label class="text-xs font-bold text-gray-500">NOME</label>
-                                <input type="text" id="sale-name" class="w-full border-2 border-doodle-dark p-2 rounded" placeholder="Nome Completo" required>
-                            </div>
-                            <div>
-                                <label class="text-xs font-bold text-gray-500">EMAIL</label>
-                                <input type="email" id="sale-email" class="w-full border-2 border-doodle-dark p-2 rounded" placeholder="email@exemplo.com" required>
-                            </div>
-                            <button class="w-full py-2 bg-doodle-purple text-white font-comic text-xl border-2 border-doodle-dark shadow-sm hover:bg-doodle-pink transition-colors">
-                                CADASTRAR
-                            </button>
-                        </form>
-                        <div id="sale-result"></div>
-                    </div>
-
-                    <!-- Lista -->
-                    <div class="col-span-2 bg-white border-4 border-doodle-dark shadow-hard flex flex-col min-h-[500px]">
+                <!-- VIEW: STUDENTS -->
+                <div id="view-students" class="hidden flex-col h-full">
+                    <div class="bg-white border-4 border-doodle-dark shadow-hard flex flex-col min-h-[600px]">
                         <div class="p-4 border-b-2 border-doodle-dark bg-gray-50 flex justify-between items-center">
-                            <h3 class="font-comic text-xl">BASE DE ALUNOS</h3>
-                            <div class="relative w-64">
-                                <i data-lucide="search" class="absolute left-2 top-2 w-4 h-4 text-gray-400"></i>
-                                <input type="text" onkeyup="filterStudents(event)" placeholder="Buscar aluno..." class="w-full pl-8 py-1 border-2 border-doodle-dark text-sm rounded">
-                            </div>
+                            <h3 class="font-comic text-xl">LISTA DE ALUNOS</h3>
+                            <div class="relative w-64"><i data-lucide="search" class="absolute left-2 top-2 w-4 h-4 text-gray-400"></i><input type="text" onkeyup="filterStudents(event)" placeholder="Buscar aluno..." class="w-full pl-8 py-1 border-2 border-doodle-dark text-sm rounded"></div>
                         </div>
-                         <div class="overflow-y-auto flex-1 custom-scroll p-0">
-                            <table class="w-full text-left">
-                                <thead class="bg-gray-100 border-b border-gray-200 text-xs font-bold text-gray-500">
-                                    <tr>
-                                        <th class="p-3">NOME</th>
-                                        <th class="p-3">EMAIL</th>
-                                        <th class="p-3">DATA CADASTRO</th>
-                                        <th class="p-3 text-right">REVOGAR</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="students-table-body"></tbody>
-                            </table>
+                        <div class="overflow-y-auto flex-1 custom-scroll p-0"><table class="w-full text-left"><thead class="bg-gray-100 border-b border-gray-200 text-xs font-bold text-gray-500"><tr><th class="p-3">NOME</th><th class="p-3">EMAIL</th><th class="p-3">DATA</th><th class="p-3 text-right">AÇÃO</th></tr></thead><tbody id="students-table-body"></tbody></table></div>
+                    </div>
+                </div>
+
+                <!-- VIEW: TESTS (Antigo test.html) -->
+                <div id="view-tests" class="hidden flex-col h-full space-y-6">
+                    <h1 class="font-comic text-4xl text-doodle-dark mb-4">LABORATÓRIO DE TESTES</h1>
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <!-- Gerador -->
+                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-6">
+                            <h3 class="font-marker text-xl mb-2 text-doodle-purple">1. Gerar Alunos Falsos</h3>
+                            <p class="text-xs text-gray-500 mb-4">Cria 5 registros no banco para testar a lista.</p>
+                            <button id="btn-generate" onclick="generateTestData()" class="w-full bg-doodle-yellow border-2 border-doodle-dark font-bold py-2 shadow-sm">GERAR +5 ALUNOS</button>
+                            <div id="log-generate" class="mt-2 text-xs h-20 overflow-y-auto bg-gray-100 p-2 border border-doodle-dark/20"></div>
+                        </div>
+                        <!-- Webhook -->
+                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-6">
+                            <h3 class="font-marker text-xl mb-2 text-doodle-green">2. Testar Webhook (Email)</h3>
+                            <p class="text-xs text-gray-500 mb-4">Simula uma venda da Hotmart/Cakto.</p>
+                            <input type="url" id="webhook-url" class="w-full border-2 border-doodle-dark p-2 text-sm mb-2" placeholder="Cole a URL da Cloud Function aqui">
+                            <div class="flex gap-2 mb-2">
+                                <input type="text" id="webhook-name" value="Teste Webhook" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
+                                <input type="email" id="webhook-email" value="teste@webhook.com" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
+                            </div>
+                            <button onclick="testWebhook(event)" class="w-full bg-doodle-green border-2 border-doodle-dark font-bold py-2 shadow-sm">DISPARAR TESTE</button>
+                            <div id="log-webhook" class="mt-2 text-xs h-10 bg-gray-100 p-2 border border-doodle-dark/20"></div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-        </div>
-    </main>
+            </div>
+        </main>
+    </div>
 
     <!-- MODAL DE EDIÇÃO DE AULA -->
     <div id="lesson-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
         <div class="bg-white w-full max-w-lg border-4 border-doodle-dark shadow-hard p-6 relative transform rotate-1">
             <button onclick="closeLessonModal()" class="absolute top-2 right-2 text-gray-500 hover:text-red-500 font-bold text-xl">X</button>
-            
             <h2 id="lesson-modal-title" class="font-comic text-3xl text-doodle-dark mb-4 border-b-2 border-doodle-dark pb-2">NOVA AULA</h2>
-            
             <form id="lesson-form" onsubmit="handleSaveLesson(event)" class="space-y-3">
                 <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="font-bold text-xs">MÓDULO</label>
-                        <input list="existing-modules" type="text" id="inp-module" class="w-full border-2 border-doodle-dark p-2 font-sans text-sm" placeholder="Ex: Módulo 1" required>
-                        <datalist id="existing-modules"></datalist>
-                    </div>
-                    <div>
-                        <label class="font-bold text-xs">PROFESSOR</label>
-                        <input type="text" id="inp-prof" class="w-full border-2 border-doodle-dark p-2 font-sans text-sm" required>
-                    </div>
+                    <div><label class="font-bold text-xs">MÓDULO</label><input list="existing-modules" type="text" id="inp-module" class="w-full border-2 border-doodle-dark p-2 text-sm" required><datalist id="existing-modules"></datalist></div>
+                    <div><label class="font-bold text-xs">PROFESSOR</label><input type="text" id="inp-prof" class="w-full border-2 border-doodle-dark p-2 text-sm" required></div>
                 </div>
-
-                <div>
-                    <label class="font-bold text-xs">TÍTULO DA AULA</label>
-                    <input type="text" id="inp-title" class="w-full border-2 border-doodle-dark p-2 font-sans text-sm" required>
-                </div>
-
+                <div><label class="font-bold text-xs">TÍTULO DA AULA</label><input type="text" id="inp-title" class="w-full border-2 border-doodle-dark p-2 text-sm" required></div>
                 <div>
                     <label class="font-bold text-xs block mb-1">VÍDEO (LINK OU UPLOAD)</label>
-                    <div class="flex gap-2 mb-2">
-                        <button type="button" id="tab-url" onclick="toggleVideoInput('url')" class="px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow">LINK</button>
-                        <button type="button" id="tab-file" onclick="toggleVideoInput('file')" class="px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white">ARQUIVO</button>
-                    </div>
-                    <div id="container-url">
-                        <input type="text" id="inp-url" class="w-full border-2 border-doodle-dark p-2 text-sm" placeholder="https://youtube.com/...">
-                    </div>
-                    <div id="container-file" class="hidden">
-                        <input type="file" id="inp-file" class="w-full text-sm" accept="video/*">
-                    </div>
+                    <div class="flex gap-2 mb-2"><button type="button" id="tab-url" onclick="toggleVideoInput('url')" class="px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow">LINK</button><button type="button" id="tab-file" onclick="toggleVideoInput('file')" class="px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white">ARQUIVO</button></div>
+                    <div id="container-url"><input type="text" id="inp-url" class="w-full border-2 border-doodle-dark p-2 text-sm" placeholder="https://youtube.com/..."></div>
+                    <div id="container-file" class="hidden"><input type="file" id="inp-file" class="w-full text-sm" accept="video/*"></div>
                 </div>
-
                 <div>
-                    <label class="font-bold text-xs block mb-1">MATERIAL DE APOIO (OPCIONAL)</label>
-                    <div class="border-2 border-doodle-dark p-2 bg-gray-50 flex items-center justify-between">
-                        <input type="file" id="inp-attachment" class="w-full text-sm">
-                        <div id="current-attachment" class="hidden text-xs text-blue-600 font-bold ml-2">
-                            <a href="#" target="_blank" id="attachment-link">Ver Atual</a>
-                        </div>
-                    </div>
+                    <label class="font-bold text-xs block mb-1">MATERIAL DE APOIO</label>
+                    <div class="border-2 border-doodle-dark p-2 bg-gray-50 flex items-center justify-between"><input type="file" id="inp-attachment" class="w-full text-sm"><div id="current-attachment" class="hidden text-xs text-blue-600 font-bold ml-2"><a href="#" target="_blank" id="attachment-link">Ver Atual</a></div></div>
                 </div>
-
-                <div>
-                    <label class="font-bold text-xs">DESCRIÇÃO</label>
-                    <textarea id="inp-desc" class="w-full border-2 border-doodle-dark p-2 text-sm h-24"></textarea>
-                </div>
-
-                <div class="pt-2">
-                    <button type="submit" id="btn-save-lesson" class="w-full bg-doodle-green py-3 font-comic text-xl border-2 border-doodle-dark shadow-sm hover:translate-y-1 transition-transform">
-                        SALVAR DADOS
-                    </button>
-                </div>
+                <div><label class="font-bold text-xs">DESCRIÇÃO</label><textarea id="inp-desc" class="w-full border-2 border-doodle-dark p-2 text-sm h-24"></textarea></div>
+                <div class="pt-2"><button type="submit" id="btn-save-lesson" class="w-full bg-doodle-green py-3 font-comic text-xl border-2 border-doodle-dark shadow-sm hover:translate-y-1 transition-transform">SALVAR DADOS</button></div>
             </form>
         </div>
     </div>
 
-    <script>
-        lucide.createIcons();
-    </script>
+    <script>lucide.createIcons();</script>
 </body>
 </html>
