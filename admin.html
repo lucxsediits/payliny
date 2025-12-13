@@ -12,20 +12,20 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInAnonymously, createUserWithEmailAndPassword, updateProfile, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // =========================================================================
         // ⚙️ CONFIGURAÇÃO DO FIREBASE
         // =========================================================================
         const manualConfig = {
-         apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
-         authDomain: "akko-academy.firebaseapp.com",
-         projectId: "akko-academy",
-         storageBucket: "akko-academy.firebasestorage.app",
-         messagingSenderId: "56272587692",
-         appId: "1:56272587692:web:6e62374b91269073784809"
-        }; 
+          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+          authDomain: "akko-academy.firebaseapp.com",
+          projectId: "akko-academy",
+          storageBucket: "akko-academy.firebasestorage.app",
+          messagingSenderId: "56272587692",
+          appId: "1:56272587692:web:6e62374b91269073784809"
+        };
 
         const firebaseConfig = manualConfig.apiKey 
             ? manualConfig 
@@ -43,14 +43,20 @@
              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                 await signInWithCustomToken(auth, __initial_auth_token);
             } else {
-                await signInAnonymously(auth);
+                // Tenta manter a sessão ou loga anônimo se necessário para leitura
+                // Nota: Criar usuários vai deslogar o admin atual, comportamento padrão do SDK Client
             }
         };
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
-            if (!user) console.log("Admin offline");
-            loadLessons();
+            if (!user) {
+                console.log("Admin offline, tentando reconectar...");
+                signInAnonymously(auth);
+            } else {
+                loadLessons();
+                loadStudents(); // Nova função para carregar alunos
+            }
         });
 
         // 1. CARREGAR AULAS
@@ -95,8 +101,56 @@
                             </div>
                             <h4 class="font-comic text-xl text-doodle-dark leading-none">${lesson.title}</h4>
                         </div>
-                        <button onclick="deleteLesson('${lesson.id}')" class="text-red-500 hover:text-red-700 hover:scale-110 transition-transform" title="Deletar">
+                        <button onclick="deleteDocById('lessons', '${lesson.id}')" class="text-red-500 hover:text-red-700 hover:scale-110 transition-transform" title="Deletar">
                             <i data-lucide="trash-2" class="w-5 h-5"></i>
+                        </button>
+                    `;
+                    listContainer.appendChild(item);
+                });
+                lucide.createIcons();
+            });
+        }
+
+        // 2. CARREGAR ALUNOS (NOVA FUNÇÃO)
+        function loadStudents() {
+            const listContainer = document.getElementById('students-list');
+            // Usamos uma coleção separada 'students' para listar os usuários
+            const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
+
+            onSnapshot(q, (snapshot) => {
+                listContainer.innerHTML = '';
+                const students = [];
+
+                snapshot.forEach(doc => {
+                    students.push({id: doc.id, ...doc.data()});
+                });
+                
+                // Ordenar por data (mais recente primeiro)
+                students.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+                if (students.length === 0) {
+                    listContainer.innerHTML = '<div class="text-center font-marker text-gray-400 p-4">Nenhum aluno cadastrado via painel.</div>';
+                    return;
+                }
+
+                students.forEach(student => {
+                    const date = student.createdAt ? new Date(student.createdAt.seconds * 1000).toLocaleDateString('pt-BR') : 'Data desc.';
+                    
+                    const item = document.createElement('div');
+                    item.className = 'bg-white border-2 border-doodle-dark p-3 shadow-hard-sm flex justify-between items-center group hover:bg-doodle-pink/10 transition-colors';
+                    item.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-doodle-purple text-white rounded-full flex items-center justify-center font-comic border border-doodle-dark text-sm">
+                                ${student.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <h4 class="font-comic text-lg text-doodle-dark leading-none">${student.name}</h4>
+                                <p class="text-xs font-sans text-gray-500">${student.email}</p>
+                                <p class="text-[10px] font-mono text-gray-400">Entrou em: ${date}</p>
+                            </div>
+                        </div>
+                        <button onclick="deleteDocById('students', '${student.id}')" class="text-red-400 hover:text-red-600 hover:scale-110 transition-transform" title="Remover da lista">
+                            <i data-lucide="user-x" class="w-5 h-5"></i>
                         </button>
                     `;
                     listContainer.appendChild(item);
@@ -112,6 +166,7 @@
             return await getDownloadURL(snapshot.ref);
         }
 
+        // POSTAR AULA
         window.handlePostLesson = async (e) => {
             e.preventDefault();
             const btn = e.target.querySelector('button[type="submit"]');
@@ -151,14 +206,18 @@
             }
         };
 
-        window.deleteLesson = async (id) => {
-            if(confirm('Tem certeza que quer deletar esta aula?')) {
-                try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lessons', id)); } 
-                catch (e) { alert('Erro ao deletar'); }
+        // FUNÇÃO GENÉRICA DE DELETAR
+        window.deleteDocById = async (collectionName, id) => {
+            if(confirm('Tem certeza? Esta ação é irreversível.')) {
+                try { 
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', collectionName, id)); 
+                } catch (e) { 
+                    alert('Erro ao deletar: ' + e.message); 
+                }
             }
         };
 
-        // --- SIMULAR COMPRA (GERAR ALUNO) ---
+        // --- SIMULAR COMPRA & REGISTRAR ALUNO ---
         window.handleSimulateSale = async (e) => {
             e.preventDefault();
             const email = document.getElementById('sale-email').value;
@@ -170,33 +229,32 @@
             btn.innerText = 'CRIANDO CONTA...';
 
             try {
-                // Gera senha aleatória
                 const randomPassword = Math.random().toString(36).slice(-8) + "Aa1";
                 
-                // Cria o usuário no Firebase Auth
-                // NOTA: Ao criar usuário assim, o admin atual é deslogado e logado como o novo usuário.
-                // Em um app real usaríamos Admin SDK no backend. Aqui, vamos alertar o admin.
+                // 1. Criar Auth
                 const userCredential = await createUserWithEmailAndPassword(auth, email, randomPassword);
                 await updateProfile(userCredential.user, { displayName: name });
 
-                // Mostra o resultado
+                // 2. SALVAR NO FIRESTORE (IMPORTANTE PARA A LISTA)
+                // Usamos a coleção 'students' para listar no painel
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
+                    uid: userCredential.user.uid,
+                    name: name,
+                    email: email,
+                    passwordTemp: randomPassword, // Opcional: salvar senha temporária (cuidado com segurança em prod)
+                    createdAt: serverTimestamp()
+                });
+
                 resultBox.innerHTML = `
                     <div class="bg-white border-2 border-doodle-dark p-4 mt-4 font-mono text-sm shadow-sm relative">
                         <div class="absolute -top-3 -right-3 bg-doodle-green text-doodle-dark px-2 py-1 font-bold font-comic border-2 border-doodle-dark rotate-3">SUCESSO!</div>
-                        <p class="font-bold text-doodle-pink mb-2">EMAIL AUTOMÁTICO (Simulação):</p>
+                        <p class="font-bold text-doodle-pink mb-2">DADOS DE ACESSO:</p>
                         <div class="bg-gray-100 p-3 rounded border border-gray-300">
-                            <p><strong>Para:</strong> ${email}</p>
-                            <p><strong>Assunto:</strong> Acesso Liberado: Akko Academy</p>
-                            <hr class="border-gray-300 my-2">
-                            <p>Olá <strong>${name}</strong>!</p>
-                            <p>Bem-vindo(a) à academia. Seus dados de acesso:</p>
-                            <ul class="list-disc pl-5 mt-1">
-                                <li><strong>Login:</strong> ${email}</li>
-                                <li><strong>Senha:</strong> ${randomPassword}</li>
-                            </ul>
-                            <p class="mt-2 text-xs text-gray-500">Link de acesso: seudominio.com</p>
+                            <p><strong>Nome:</strong> ${name}</p>
+                            <p><strong>Login:</strong> ${email}</p>
+                            <p><strong>Senha:</strong> ${randomPassword}</p>
                         </div>
-                        <p class="mt-3 text-xs text-red-500 font-bold">* Atenção: Você foi logado como este novo aluno. Recarregue a página para voltar ao admin se necessário.</p>
+                        <p class="mt-3 text-xs text-red-500 font-bold">* Atualize a página para voltar ao modo Admin (o login mudou para este aluno).</p>
                     </div>
                 `;
                 
@@ -222,14 +280,20 @@
 
             if(tabName === 'lessons') {
                 tabAulas.classList.remove('hidden');
+                tabAulas.classList.add('flex'); // Flex para layout lado a lado
                 tabAlunos.classList.add('hidden');
+                tabAlunos.classList.remove('flex');
+                
                 btnAulas.classList.add('bg-doodle-yellow', 'translate-y-1');
                 btnAulas.classList.remove('bg-gray-200');
                 btnAlunos.classList.remove('bg-doodle-purple', 'text-white', 'translate-y-1');
                 btnAlunos.classList.add('bg-gray-200', 'text-doodle-dark');
             } else {
                 tabAulas.classList.add('hidden');
+                tabAulas.classList.remove('flex');
                 tabAlunos.classList.remove('hidden');
+                tabAlunos.classList.add('flex');
+
                 btnAlunos.classList.add('bg-doodle-purple', 'text-white', 'translate-y-1');
                 btnAlunos.classList.remove('bg-gray-200', 'text-doodle-dark');
                 btnAulas.classList.remove('bg-doodle-yellow', 'translate-y-1');
@@ -302,9 +366,7 @@
         .custom-scroll::-webkit-scrollbar-track { background: #eee; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #2D2B38; border-radius: 4px; }
         
-        /* Tab Transitions */
         .tab-btn { transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
-        .active-tab { transform: translateY(4px); }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
@@ -329,7 +391,7 @@
             <div id="view-lessons" class="flex flex-col md:flex-row gap-8 items-start h-full">
                 
                 <!-- Formulário Nova Aula -->
-                <div class="w-full md:w-1/2 relative bg-white border-2 border-doodle-dark p-6 shadow-hard-sm">
+                <div class="w-full md:w-3/5 relative bg-white border-2 border-doodle-dark p-6 shadow-hard-sm">
                     <div class="absolute -top-4 -left-4 bg-doodle-pink border-2 border-doodle-dark px-3 py-1 font-comic text-white transform -rotate-3 shadow-sm">NOVA AULA</div>
                     
                     <form class="space-y-3 mt-2" onsubmit="handlePostLesson(event)">
@@ -352,7 +414,7 @@
                 </div>
 
                 <!-- Lista de Aulas -->
-                <div class="w-full md:w-1/2 relative bg-doodle-paper border-2 border-doodle-dark p-6 h-[600px] flex flex-col shadow-hard-sm">
+                <div class="w-full md:w-2/5 relative bg-doodle-paper border-2 border-doodle-dark p-6 h-[600px] flex flex-col shadow-hard-sm">
                     <div class="absolute -top-4 -right-4 bg-doodle-yellow border-2 border-doodle-dark px-3 py-1 font-comic text-doodle-dark transform rotate-2 shadow-sm">BIBLIOTECA</div>
                     <div id="lessons-list" class="flex-1 overflow-y-auto custom-scroll space-y-2 p-2 mt-2">
                         <div class="text-center font-marker text-gray-400 mt-10">Carregando...</div>
@@ -363,16 +425,12 @@
                 </div>
             </div>
 
-            <!-- ================= VIEW: ALUNOS ================= -->
+            <!-- ================= VIEW: ALUNOS (ATUALIZADA) ================= -->
             <div id="view-students" class="hidden flex-col md:flex-row gap-8 items-start h-full">
                 
                 <!-- Criar Aluno -->
                 <div class="w-full md:w-1/2 bg-white border-2 border-doodle-dark p-8 shadow-hard-sm relative">
                     <div class="absolute -top-4 -left-4 bg-doodle-purple border-2 border-doodle-dark px-3 py-1 font-comic text-white transform -rotate-1 shadow-sm">NOVO ALUNO</div>
-                    
-                    <p class="font-sans text-sm text-gray-600 mb-6 border-l-4 border-doodle-yellow pl-3 italic">
-                        Esta ferramenta simula o processo automático da Hotmart/Kirvano. Ao criar o aluno aqui, o sistema gera uma senha e exibe o template de email para envio.
-                    </p>
 
                     <form onsubmit="handleSimulateSale(event)" class="space-y-4">
                         <div>
@@ -385,19 +443,20 @@
                         </div>
                         <button type="submit" class="w-full bg-doodle-purple text-white font-comic text-2xl py-3 border-4 border-doodle-dark shadow-hard hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all flex justify-center items-center gap-2">
                             <i data-lucide="user-plus" class="w-6 h-6"></i>
-                            GERAR ACESSO & SENHA
+                            CADASTRAR ALUNO
                         </button>
                     </form>
+
+                    <!-- Resultado (Dados de Acesso) -->
+                    <div id="sale-result" class="mt-4"></div>
                 </div>
 
-                <!-- Resultado (Email) -->
-                <div class="w-full md:w-1/2 bg-gray-100 border-2 border-doodle-dark border-dashed p-6 min-h-[300px] flex flex-col items-center justify-center relative">
-                    <div class="tape bg-doodle-pink w-32 top-[-15px] left-1/2 -translate-x-1/2 rotate-2"></div>
-                    <div id="sale-result" class="w-full">
-                        <div class="text-center opacity-50">
-                            <i data-lucide="mail" class="w-16 h-16 mx-auto mb-2 text-gray-400"></i>
-                            <p class="font-marker text-gray-500">O template de email aparecerá aqui...</p>
-                        </div>
+                <!-- Lista de Alunos (Nova) -->
+                <div class="w-full md:w-1/2 relative bg-doodle-paper border-2 border-doodle-dark p-6 h-[600px] flex flex-col shadow-hard-sm">
+                    <div class="absolute -top-4 -right-4 bg-doodle-pink border-2 border-doodle-dark px-3 py-1 font-comic text-white transform rotate-2 shadow-sm">LISTA DE ALUNOS</div>
+                    
+                    <div id="students-list" class="flex-1 overflow-y-auto custom-scroll space-y-2 p-2 mt-4">
+                        <div class="text-center font-marker text-gray-400 mt-10">Carregando lista...</div>
                     </div>
                 </div>
 
