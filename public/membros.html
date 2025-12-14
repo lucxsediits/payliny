@@ -14,23 +14,24 @@
         import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // =========================================================================
-        // ⚙️ PASSO 1: CONFIGURAÇÃO DO FIREBASE
-        // =========================================================================
+        const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
+
         const manualConfig = {
-          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
-          authDomain: "akko-academy.firebaseapp.com",
-          projectId: "akko-academy",
-          storageBucket: "akko-academy.firebasestorage.app",
-          messagingSenderId: "56272587692",
-          appId: "1:56272587692:web:6e62374b91269073784809"
+         apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+         authDomain: "akko-academy.firebaseapp.com",
+         projectId: "akko-academy",
+         storageBucket: "akko-academy.firebasestorage.app",
+         messagingSenderId: "56272587692",
+         appId: REAL_APP_ID,
+         measurementId: "G-461DC2TWB3"
         };
 
         const firebaseConfig = manualConfig.apiKey 
             ? manualConfig 
             : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // Usa o ID Real sempre, para garantir consistência dos dados de progresso
+        const appId = REAL_APP_ID; 
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -73,13 +74,9 @@
 
         // Auth Init
         const initAuth = async () => {
-             // FIX: Só tenta usar o token de teste se o usuário NÃO tiver logado manualmente.
-             // O "index.html" define 'userLoggedIn' no localStorage.
              const hasManualLogin = localStorage.getItem('userLoggedIn') === 'true';
 
              if (!hasManualLogin && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                // Se não tem login manual, podemos tentar o token do ambiente (para testes rápidos)
-                // Mas NÃO fazemos signInAnonymously como fallback, pois isso deslogaria o usuário real.
                 try {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } catch(e) {}
@@ -88,12 +85,15 @@
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
+            // FIX: Removemos o loading overlay apenas quando o estado de auth é resolvido
+            document.getElementById('global-loader').classList.add('hidden');
+
             if (!user) {
-                // Se não tem usuário nenhum, redireciona para login
+                // Se não tem usuário, manda pro login
                 window.location.href = 'index.html';
             } else {
                 currentUser = user;
-                // Tenta pegar nome do localStorage se não tiver no user auth (comum em email/password sem updateProfile)
+                // Tenta pegar nome do localStorage se não tiver no user auth
                 const userName = localStorage.getItem('userName') || user.email || 'Aluno';
                 const initials = userName.charAt(0).toUpperCase();
                 document.getElementById('user-avatar').innerText = initials;
@@ -131,12 +131,15 @@
         }
 
         function loadUserProgress(userId) {
+            // Caminho corrigido com appId consistente
             const progressRef = collection(db, 'artifacts', appId, 'users', userId, 'progress');
             onSnapshot(progressRef, (snapshot) => {
                 completedLessonIds.clear();
                 snapshot.forEach(doc => completedLessonIds.add(doc.id));
                 updateUI();
                 updateCurrentLessonButtonState();
+            }, (error) => {
+                console.error("Erro ao carregar progresso:", error);
             });
         }
 
@@ -381,6 +384,7 @@
             if (currentLessonIndex === -1 || !currentUser) return;
             
             const lesson = currentLessons[currentLessonIndex];
+            // Caminho seguro usando appId consistente e uid do auth
             const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'progress', lesson.id);
             const btn = document.getElementById('btn-mark-completed');
             
@@ -397,6 +401,7 @@
                 }
             } catch (error) {
                 console.error("Erro ao salvar progresso:", error);
+                alert("Erro ao salvar progresso. Verifique se está logado.");
             } finally {
                 btn.classList.remove('opacity-50', 'pointer-events-none');
             }
@@ -617,6 +622,11 @@
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden font-sans">
+
+    <!-- GLOBAL LOADER -->
+    <div id="global-loader" class="fixed inset-0 z-50 bg-doodle-dark flex items-center justify-center">
+        <div class="text-white font-comic text-3xl animate-pulse">CARREGANDO...</div>
+    </div>
 
     <!-- Header Sticker -->
     <header class="h-20 bg-doodle-yellow border-b-4 border-doodle-dark flex justify-between items-center px-6 z-30 relative shadow-hard">

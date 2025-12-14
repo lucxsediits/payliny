@@ -10,15 +10,19 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // ADICIONADO: setPersistence e browserLocalPersistence para fixar o login
+        import { getAuth, signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
 
         const manualConfig = {
-          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
-          authDomain: "akko-academy.firebaseapp.com",
-          projectId: "akko-academy",
-          storageBucket: "akko-academy.firebasestorage.app",
-          messagingSenderId: "56272587692",
-          appId: "1:56272587692:web:6e62374b91269073784809"
+         apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+         authDomain: "akko-academy.firebaseapp.com",
+         projectId: "akko-academy",
+         storageBucket: "akko-academy.firebasestorage.app",
+         messagingSenderId: "56272587692",
+         appId: REAL_APP_ID,
+         measurementId: "G-461DC2TWB3"
         };
 
         const firebaseConfig = manualConfig.apiKey 
@@ -45,9 +49,16 @@
                 btn.innerText = 'ENTRANDO...';
                 btn.disabled = true;
                 try {
+                    // FIX: Força a persistência LOCAL (localStorage) antes de logar
+                    await setPersistence(auth, browserLocalPersistence);
+                    
                     await signInWithEmailAndPassword(auth, email, password);
+                    
                     localStorage.setItem('userLoggedIn', 'true');
-                    window.location.href = 'membros.html'; // Redireciona para área de membros
+                    // Salva o email para mostrar iniciais na próxima tela se precisar
+                    localStorage.setItem('userName', email); 
+                    
+                    window.location.href = 'membros.html'; 
                 } catch (error) {
                     console.error(error);
                     let message = "Credenciais inválidas.";
@@ -512,10 +523,6 @@
                             </li>
                             <li class="flex items-center gap-4">
                                 <div class="w-8 h-8 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-sm shadow-sm">✔</div> 
-                                Pack de Assets Doodle
-                            </li>
-                            <li class="flex items-center gap-4">
-                                <div class="w-8 h-8 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-sm shadow-sm">✔</div> 
                                 Certificado Oficial
                             </li>
                             <li class="flex items-center gap-4">
@@ -542,7 +549,7 @@
                         <div class="font-comic text-8xl text-doodle-dark my-2 tracking-tight transform -rotate-3 drop-shadow-sm">
                             R$ 197<span class="text-5xl">,99</span>
                         </div>
-                        <p class="text-doodle-purple font-marker text-xl mb-10 bg-doodle-paper px-4 py-1 border-2 border-doodle-purple rounded-full">ou 12x de R$ 19,70</p>
+                        <p class="text-doodle-purple font-marker text-xl mb-10 bg-doodle-paper px-4 py-1 border-2 border-doodle-purple rounded-full">ou 12x de R$ 23,02</p>
                         
                         <button onclick="goToCheckout()" class="btn-doodle w-full bg-doodle-yellow text-doodle-dark font-comic text-4xl py-5 rounded-xl hover:bg-white transition-all transform hover:-rotate-1 relative group overflow-hidden">
                             <span class="relative z-10">COMPRAR AGORA</span>

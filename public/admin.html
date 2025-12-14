@@ -14,36 +14,40 @@
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-        // NOVO: Importando Functions
         import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
         // =========================================================================
         // ⚙️ CONFIGURAÇÃO & CREDENCIAIS
         // =========================================================================
-        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com";
+        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; // Seu email de admin
         const CLOUD_FUNCTION_URL = ""; 
 
+        // ID Real do App (Garante que funcione mesmo rodando local)
+        const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
+
         const manualConfig = {
-          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
-          authDomain: "akko-academy.firebaseapp.com",
-          projectId: "akko-academy",
-          storageBucket: "akko-academy.firebasestorage.app",
-          messagingSenderId: "56272587692",
-          appId: "1:56272587692:web:6e62374b91269073784809"
+         apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+         authDomain: "akko-academy.firebaseapp.com",
+         projectId: "akko-academy",
+         storageBucket: "akko-academy.firebasestorage.app",
+         messagingSenderId: "56272587692",
+         appId: REAL_APP_ID,
+         measurementId: "G-461DC2TWB3"
         };
 
         const firebaseConfig = manualConfig.apiKey 
             ? manualConfig 
             : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // Usa o ID injetado pelo hosting OU o ID real hardcoded (fallback de segurança)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : REAL_APP_ID;
 
         // Inicializa App
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         const storage = getStorage(app);
-        const functions = getFunctions(app); // Inicializa Functions
+        const functions = getFunctions(app); // Conecta com o Backend
 
         // --- VARIÁVEIS GLOBAIS ---
         let globalLessons = [];
@@ -233,14 +237,20 @@
             lucide.createIcons();
 
             try {
-                // Chama a Cloud Function
+                // Chama a Cloud Function com o ID Correto
                 const syncFunc = httpsCallable(functions, 'syncAuthToFirestore');
                 const result = await syncFunc({ appId: appId });
                 
                 alert(`Sucesso! ${result.data.message}`);
+                // Recarrega a página para atualizar a tabela visualmente se necessário
+                window.location.reload();
             } catch (error) {
                 console.error(error);
-                alert("Erro ao sincronizar: " + error.message);
+                let msg = error.message;
+                // Mensagem amigável para o erro comum de Auth
+                if (msg.includes('unauthenticated')) msg = "Sessão expirada. Faça login novamente no painel.";
+                
+                alert("Erro ao sincronizar: " + msg);
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> SINCRONIZAR AUTH`;
@@ -256,12 +266,12 @@
             if(confirm(msg)) {
                 try { 
                     if (col === 'students') {
-                        // NOVO: Chama Cloud Function para deletar Auth + Firestore
+                        // Deletar aluno (Auth + Firestore) via Backend
                         const deleteFunc = httpsCallable(functions, 'deleteStudent');
                         await deleteFunc({ uid: id, appId: appId });
                         alert("Aluno deletado do sistema!");
                     } else {
-                        // Aulas continuam sendo deletadas direto (só Firestore)
+                        // Aulas deletadas direto (só Firestore)
                         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id)); 
                     }
                 } 
@@ -302,7 +312,6 @@
                     const newUid = userCred.user.uid;
                     await signOut(secondaryAuth);
                     
-                    // O trigger 'onUserCreated' no backend vai criar o doc, mas podemos criar aqui pra ser instantâneo na UI
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
                         uid: newUid,
                         name: name,
@@ -320,7 +329,9 @@
                 }
                 e.target.reset();
             } catch (err) {
-                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold bg-red-100 p-2 border border-red-200">❌ ${err.message}</div>`;
+                let msg = err.message;
+                if (err.code === 'auth/email-already-in-use') msg = "Este email já está cadastrado!";
+                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold bg-red-100 p-2 border border-red-200">❌ ${msg}</div>`;
             } finally {
                 btn.disabled = false;
                 btn.innerText = "CADASTRAR ALUNO";
