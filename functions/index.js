@@ -1,14 +1,13 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
+const cors = require("cors")({ origin: true });
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// SEU APP ID
 const DEFAULT_APP_ID = '1:56272587692:web:6e62374b91269073784809';
 
-// Configuração de Email
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -17,82 +16,78 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-// ==================================================================
-// 1. WEBHOOK DE VENDAS (Cria o aluno quando a venda é aprovada)
-// ==================================================================
-exports.handleNewSale = functions.https.onRequest(async (req, res) => {
-    res.set('Access-Control-Allow-Origin', '*');
-    if (req.method === 'OPTIONS') {
-        res.set('Access-Control-Allow-Methods', 'POST');
-        res.set('Access-Control-Allow-Headers', 'Content-Type');
-        res.status(204).send('');
-        return;
-    }
-
-    try {
-        const data = req.body;
-        const email = data.email || data.client?.email || data.buyer_email;
-        const name = data.name || data.client?.name || data.buyer_name;
-        const status = data.status || data.transaction_status || data.event; 
-
-        const invalidStatuses = ['refused', 'refunded', 'chargedback', 'canceled'];
-        if (status && invalidStatuses.includes(status)) {
-            return res.status(200).send("Status ignorado.");
-        }
-
-        if (!email) return res.status(400).send("Email não encontrado.");
-
-        let userRecord;
-        let isNewUser = false;
-        let passwordUsed = null;
-
+// WEBHOOK
+exports.handleNewSale = functions.https.onRequest((req, res) => {
+    return cors(req, res, async () => {
         try {
-            userRecord = await admin.auth().getUserByEmail(email);
-        } catch (e) {
-            if (e.code === 'auth/user-not-found') {
-                isNewUser = true;
-                passwordUsed = Math.random().toString(36).slice(-8) + "Aa1";
-                userRecord = await admin.auth().createUser({
-                    email: email,
-                    password: passwordUsed,
-                    displayName: name
-                });
-            } else {
-                throw e;
+            // Log para debug
+            console.log("Body recebido:", req.body);
+
+            const data = req.body;
+            // Lógica robusta para pegar email
+            const email = data.email || data.client?.email || data.buyer_email || (data.data && data.data.buyer && data.data.buyer.email);
+            const name = data.name || data.client?.name || data.buyer_name || (data.data && data.data.buyer && data.data.buyer.name);
+            const status = data.status || data.transaction_status || data.event; 
+
+            if (!email) {
+                console.warn("Email não encontrado. Payload:", data);
+                return res.status(200).send("Ignorado: Sem email.");
             }
+
+            // Ignorar status de erro/reembolso
+            const invalidStatuses = ['refused', 'refunded', 'chargedback', 'canceled'];
+            if (status && invalidStatuses.includes(status)) {
+                return res.status(200).send("Status ignorado.");
+            }
+
+            let userRecord;
+            let isNewUser = false;
+            let passwordUsed = null;
+
+            try {
+                userRecord = await admin.auth().getUserByEmail(email);
+            } catch (e) {
+                if (e.code === 'auth/user-not-found') {
+                    isNewUser = true;
+                    passwordUsed = Math.random().toString(36).slice(-8) + "Aa1";
+                    userRecord = await admin.auth().createUser({
+                        email: email,
+                        password: passwordUsed,
+                        displayName: name || "Novo Aluno"
+                    });
+                } else {
+                    throw e;
+                }
+            }
+
+            // Salva no Firestore
+            await db.collection('artifacts').doc(DEFAULT_APP_ID)
+                .collection('public').doc('data')
+                .collection('students').doc(userRecord.uid).set({
+                    uid: userRecord.uid,
+                    name: name || userRecord.displayName || 'Aluno Novo',
+                    email: email,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    accessLevel: 'student',
+                    productId: data.product_id || 'unknown'
+                }, { merge: true });
+
+            if (isNewUser && passwordUsed) {
+                await sendWelcomeEmail(email, passwordUsed);
+            }
+
+            return res.status(200).send("Sucesso.");
+
+        } catch (error) {
+            console.error("Erro Webhook:", error);
+            return res.status(500).send("Erro: " + error.message);
         }
-
-        await db.collection('artifacts').doc(DEFAULT_APP_ID)
-            .collection('public').doc('data')
-            .collection('students').doc(userRecord.uid).set({
-                uid: userRecord.uid,
-                name: name || userRecord.displayName || 'Aluno Novo',
-                email: email,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                accessLevel: 'student',
-                productId: data.product_id || 'unknown'
-            }, { merge: true });
-
-        if (isNewUser && passwordUsed) {
-            await sendWelcomeEmail(email, passwordUsed);
-        }
-
-        return res.status(200).send("Sucesso.");
-
-    } catch (error) {
-        console.error("Erro no Webhook:", error);
-        return res.status(500).send("Erro: " + error.message);
-    }
+    });
 });
 
-// ==================================================================
-// 2. FUNÇÃO DELETAR (Chamada pelo Admin)
-// ==================================================================
+// DELETAR ALUNO
 exports.deleteStudent = functions.https.onCall(async (data, context) => {
-    // Verifica se quem chamou está logado
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Faça login novamente.');
-    }
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login necessário.');
 
     const targetUid = data.uid;
     const appId = data.appId || DEFAULT_APP_ID;
@@ -102,27 +97,22 @@ exports.deleteStudent = functions.https.onCall(async (data, context) => {
         await db.collection("artifacts").doc(appId)
             .collection("public").doc("data")
             .collection("students").doc(targetUid).delete();
-
-        return { success: true, message: "Aluno deletado!" };
+        return { success: true };
     } catch (error) {
         if (error.code === 'auth/user-not-found') {
+             // Se não existe no Auth, apaga só do banco
              await db.collection("artifacts").doc(appId)
                 .collection("public").doc("data")
                 .collection("students").doc(targetUid).delete();
-             return { success: true, message: "Removido da lista (login não existia)." };
+             return { success: true };
         }
         throw new functions.https.HttpsError('internal', error.message);
     }
 });
 
-// ==================================================================
-// 3. SINCRONIZAR (Botão do Admin)
-// ==================================================================
+// SINCRONIZAR
 exports.syncAuthToFirestore = functions.https.onCall(async (data, context) => {
-    // Verifica se quem chamou está logado
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Faça login novamente.');
-    }
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Login necessário.');
     
     const appId = data.appId || DEFAULT_APP_ID;
     const collectionRef = db.collection("artifacts").doc(appId)
@@ -149,7 +139,7 @@ exports.syncAuthToFirestore = functions.https.onCall(async (data, context) => {
     }
 
     if (count > 0) await batch.commit();
-    return { success: true, message: `${count} usuários sincronizados!` };
+    return { success: true, message: `${count} sincronizados.` };
 });
 
 async function sendWelcomeEmail(email, password) {
@@ -157,7 +147,7 @@ async function sendWelcomeEmail(email, password) {
         from: '"Akko Academy" <akkoacademycontato@gmail.com>',
         to: email,
         subject: '🚀 Acesso Liberado',
-        html: `<p>Login: ${email}<br>Senha: ${password}</p>`
+        html: `Login: ${email}<br>Senha: ${password}`
     };
     try { await transporter.sendMail(mailOptions); } catch (e) { console.error(e); }
 }

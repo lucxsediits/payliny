@@ -94,16 +94,11 @@
                 localStorage.setItem('adminLoggedIn', 'true');
             } catch (error) {
                 console.error("Erro login:", error);
-                let msg = "Erro ao entrar.";
-                if(error.code === 'auth/user-not-found' && email === ADMIN_EMAIL_PERMITIDO) {
-                    if(confirm("Conta Admin não existe. Deseja criar agora?")) {
-                        try {
-                            await createUserWithEmailAndPassword(auth, email, pass);
-                            localStorage.setItem('adminLoggedIn', 'true');
-                            return;
-                        } catch(err) { msg = err.message; }
-                    }
-                }
+                let msg = "Erro ao entrar. Verifique suas credenciais.";
+                
+                // REMOVIDO: Bloco inseguro de criação automática de admin
+                // Agora o admin deve ser criado apenas via Firebase Console para segurança.
+                
                 errorMsg.innerText = msg;
                 errorMsg.classList.remove('hidden');
                 btn.disabled = false;

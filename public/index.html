@@ -10,8 +10,8 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // ADICIONADO: setPersistence e browserLocalPersistence para fixar o login
-        import { getAuth, signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // ADICIONADO: sendPasswordResetEmail para recuperação de senha
+        import { getAuth, signInWithEmailAndPassword, setPersistence, browserLocalPersistence, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
 
@@ -43,7 +43,7 @@
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const errorMsg = document.getElementById('error-msg');
-            const btn = e.target.querySelector('button');
+            const btn = e.target.querySelector('button[type="submit"]'); // Seletor mais específico
 
             if (email && password) {
                 btn.innerText = 'ENTRANDO...';
@@ -73,6 +73,31 @@
                 }
             } else {
                 errorMsg.innerText = "Preencha todos os campos.";
+                errorMsg.classList.remove('hidden');
+            }
+        }
+
+        // NOVA FUNÇÃO: Recuperar Senha
+        window.handleForgotPassword = async () => {
+            const email = document.getElementById('email').value;
+            const errorMsg = document.getElementById('error-msg');
+            
+            if (!email) {
+                errorMsg.innerText = "Digite seu email no campo acima primeiro.";
+                errorMsg.classList.remove('hidden');
+                return;
+            }
+
+            if (!confirm(`Enviar link de redefinição de senha para: ${email}?`)) return;
+
+            try {
+                await sendPasswordResetEmail(auth, email);
+                alert("Link enviado! Verifique sua caixa de entrada (e spam).");
+            } catch (error) {
+                console.error(error);
+                let msg = "Erro ao enviar email.";
+                if (error.code === 'auth/user-not-found') msg = "Este email não está cadastrado.";
+                errorMsg.innerText = msg;
                 errorMsg.classList.remove('hidden');
             }
         }
@@ -523,6 +548,10 @@
                             </li>
                             <li class="flex items-center gap-4">
                                 <div class="w-8 h-8 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-sm shadow-sm">✔</div> 
+                                Pack de Assets Doodle
+                            </li>
+                            <li class="flex items-center gap-4">
+                                <div class="w-8 h-8 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-sm shadow-sm">✔</div> 
                                 Certificado Oficial
                             </li>
                             <li class="flex items-center gap-4">
@@ -549,7 +578,7 @@
                         <div class="font-comic text-8xl text-doodle-dark my-2 tracking-tight transform -rotate-3 drop-shadow-sm">
                             R$ 197<span class="text-5xl">,99</span>
                         </div>
-                        <p class="text-doodle-purple font-marker text-xl mb-10 bg-doodle-paper px-4 py-1 border-2 border-doodle-purple rounded-full">ou 12x de R$ 23,02</p>
+                        <p class="text-doodle-purple font-marker text-xl mb-10 bg-doodle-paper px-4 py-1 border-2 border-doodle-purple rounded-full">ou 12x de R$ 19,70</p>
                         
                         <button onclick="goToCheckout()" class="btn-doodle w-full bg-doodle-yellow text-doodle-dark font-comic text-4xl py-5 rounded-xl hover:bg-white transition-all transform hover:-rotate-1 relative group overflow-hidden">
                             <span class="relative z-10">COMPRAR AGORA</span>
@@ -603,6 +632,10 @@
                 <div>
                     <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">SENHA</label>
                     <input type="password" id="password" class="w-full bg-white border-2 border-doodle-dark p-3 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow rounded-lg text-lg" required>
+                    <!-- Link de Recuperação -->
+                    <div class="text-right mt-1">
+                        <button type="button" onclick="handleForgotPassword()" class="text-xs font-bold text-doodle-purple hover:underline">ESQUECI A SENHA</button>
+                    </div>
                 </div>
                 <button type="submit" class="btn-doodle w-full bg-doodle-pink text-white font-comic text-3xl py-3 mt-4 border-2 border-doodle-dark hover:bg-doodle-purple rounded-lg shadow-hard-sm">
                     ENTRAR
