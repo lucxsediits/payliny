@@ -14,11 +14,13 @@
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        // NOVO: Importando Functions
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
         // =========================================================================
         // ⚙️ CONFIGURAÇÃO & CREDENCIAIS
         // =========================================================================
-        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; // 🚨 Seu email de admin
+        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com";
         const CLOUD_FUNCTION_URL = ""; 
 
         const manualConfig = {
@@ -36,11 +38,12 @@
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        // Inicializa App Principal (Admin)
+        // Inicializa App
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         const storage = getStorage(app);
+        const functions = getFunctions(app); // Inicializa Functions
 
         // --- VARIÁVEIS GLOBAIS ---
         let globalLessons = [];
@@ -48,33 +51,23 @@
         let editingLessonId = null;
         let currentUser = null;
 
-        // --- AUTH INIT CORRIGIDO ---
+        // --- AUTH INIT ---
         const initAuth = async () => {
-            // FIX: Só tenta o token de teste se NÃO tivermos feito login manual de admin antes.
-            // Isso previne que o refresh da página te deslogue.
             const isAdminLogged = localStorage.getItem('adminLoggedIn') === 'true';
-
             if (!isAdminLogged && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                try {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } catch (e) { console.log("Ignorando token de teste..."); }
+                try { await signInWithCustomToken(auth, __initial_auth_token); } catch (e) {}
             }
         };
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                // Se o email bater, é sucesso
                 if(user.email === ADMIN_EMAIL_PERMITIDO) {
                     currentUser = user;
-                    // Garante que a flag está salva
                     localStorage.setItem('adminLoggedIn', 'true');
                     showAdminPanel();
                     initRealtimeListeners();
                 } else {
-                    // FIX: Se estiver logado com outro user (ex: token de teste), NÃO faz signOut.
-                    // Apenas mostra a tela de login para permitir a troca de conta.
-                    // signOut(auth); // <--- REMOVIDO para evitar loop
                     showLoginScreen();
                 }
             } else {
@@ -96,23 +89,19 @@
 
             try {
                 await signInWithEmailAndPassword(auth, email, pass);
-                // Salva flag para impedir que o script de teste sobrescreva a sessão
                 localStorage.setItem('adminLoggedIn', 'true');
             } catch (error) {
                 console.error("Erro login:", error);
-                let msg = "Erro ao entrar. Verifique email e senha.";
-                
+                let msg = "Erro ao entrar.";
                 if(error.code === 'auth/user-not-found' && email === ADMIN_EMAIL_PERMITIDO) {
                     if(confirm("Conta Admin não existe. Deseja criar agora?")) {
                         try {
                             await createUserWithEmailAndPassword(auth, email, pass);
                             localStorage.setItem('adminLoggedIn', 'true');
-                            alert("Admin criado! Pode entrar.");
                             return;
-                        } catch(err) { msg = "Erro ao criar: " + err.message; }
+                        } catch(err) { msg = err.message; }
                     }
                 }
-                
                 errorMsg.innerText = msg;
                 errorMsg.classList.remove('hidden');
                 btn.disabled = false;
@@ -121,7 +110,7 @@
         };
 
         window.handleLogout = () => {
-            localStorage.removeItem('adminLoggedIn'); // Limpa a flag
+            localStorage.removeItem('adminLoggedIn');
             signOut(auth);
             window.location.reload();
         };
@@ -139,25 +128,21 @@
 
         // --- DADOS EM TEMPO REAL ---
         function initRealtimeListeners() {
-            // Aulas
             const qLessons = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
             onSnapshot(qLessons, (snapshot) => {
                 globalLessons = [];
                 snapshot.forEach(doc => globalLessons.push({id: doc.id, ...doc.data()}));
                 globalLessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-                
                 updateDashboardStats();
                 renderLessonsTable();
                 updateModuleDatalist();
             });
 
-            // Alunos
             const qStudents = query(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
             onSnapshot(qStudents, (snapshot) => {
                 globalStudents = [];
                 snapshot.forEach(doc => globalStudents.push({id: doc.id, ...doc.data()}));
                 globalStudents.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                
                 updateDashboardStats();
                 renderStudentsTable();
             });
@@ -173,8 +158,7 @@
         function updateModuleDatalist() {
             const datalist = document.getElementById('existing-modules');
             datalist.innerHTML = '';
-            const uniqueModules = new Set(globalLessons.map(l => l.moduleName));
-            uniqueModules.forEach(mod => {
+            new Set(globalLessons.map(l => l.moduleName)).forEach(mod => {
                 const opt = document.createElement('option');
                 opt.value = mod;
                 datalist.appendChild(opt);
@@ -185,10 +169,7 @@
         window.renderLessonsTable = (filter = "") => {
             const container = document.getElementById('lessons-table-body');
             container.innerHTML = '';
-            const filtered = globalLessons.filter(l => 
-                l.title.toLowerCase().includes(filter.toLowerCase()) || 
-                l.moduleName.toLowerCase().includes(filter.toLowerCase())
-            );
+            const filtered = globalLessons.filter(l => l.title.toLowerCase().includes(filter.toLowerCase()));
 
             if(filtered.length === 0) {
                 container.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`; return;
@@ -201,7 +182,7 @@
                 tr.innerHTML = `
                     <td class="p-3 font-comic text-doodle-purple">${lesson.moduleName}</td>
                     <td class="p-3 font-bold text-gray-700">${lesson.title}</td>
-                    <td class="p-3 text-xs font-mono text-gray-500 truncate max-w-[150px]">${lesson.professor}</td>
+                    <td class="p-3 text-xs font-mono text-gray-500">${lesson.professor}</td>
                     <td class="p-3 text-center">${attachIcon}</td>
                     <td class="p-3 flex gap-2 justify-end">
                         <button onclick="openEditLesson('${lesson.id}')" class="p-1 text-blue-500 hover:bg-blue-100 rounded"><i data-lucide="pencil" class="w-4 h-4"></i></button>
@@ -216,10 +197,7 @@
         window.renderStudentsTable = (filter = "") => {
             const container = document.getElementById('students-table-body');
             container.innerHTML = '';
-            const filtered = globalStudents.filter(s => 
-                (s.name || "").toLowerCase().includes(filter.toLowerCase()) || 
-                (s.email || "").toLowerCase().includes(filter.toLowerCase())
-            );
+            const filtered = globalStudents.filter(s => (s.name || "").toLowerCase().includes(filter.toLowerCase()) || (s.email || "").toLowerCase().includes(filter.toLowerCase()));
 
             if(filtered.length === 0) {
                 container.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`; return;
@@ -237,7 +215,7 @@
                     <td class="p-3 text-sm text-gray-600">${student.email}</td>
                     <td class="p-3 text-xs font-mono text-gray-400">${date}</td>
                     <td class="p-3 text-right">
-                        <button onclick="deleteDocById('students', '${student.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded" title="Remover da Lista"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        <button onclick="deleteDocById('students', '${student.uid || student.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded" title="Deletar Login e Dados"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </td>
                 `;
                 container.appendChild(tr);
@@ -245,20 +223,53 @@
             lucide.createIcons();
         }
 
-        // --- AÇÕES DO SISTEMA ---
+        // --- AÇÕES DO SISTEMA (MODIFICADO) ---
+
+        // NOVO: Sincronizar Auth -> Firestore
+        window.syncUsers = async () => {
+            const btn = document.getElementById('btn-sync');
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="animate-spin w-4 h-4 mr-2"></i> PROCESSANDO...`;
+            lucide.createIcons();
+
+            try {
+                // Chama a Cloud Function
+                const syncFunc = httpsCallable(functions, 'syncAuthToFirestore');
+                const result = await syncFunc({ appId: appId });
+                
+                alert(`Sucesso! ${result.data.message}`);
+            } catch (error) {
+                console.error(error);
+                alert("Erro ao sincronizar: " + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> SINCRONIZAR AUTH`;
+                lucide.createIcons();
+            }
+        }
+
         window.deleteDocById = async (col, id) => {
             const msg = col === 'students' 
-                ? "Tem certeza? Isso removerá o aluno da lista do site, mas a conta de login pode permanecer no sistema do Google. Deseja continuar?" 
+                ? "⚠️ ATENÇÃO: Isso vai deletar o LOGIN do aluno e removê-lo da lista. Confirma?" 
                 : "Tem certeza absoluta? Não dá pra desfazer.";
                 
             if(confirm(msg)) {
                 try { 
-                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id)); 
+                    if (col === 'students') {
+                        // NOVO: Chama Cloud Function para deletar Auth + Firestore
+                        const deleteFunc = httpsCallable(functions, 'deleteStudent');
+                        await deleteFunc({ uid: id, appId: appId });
+                        alert("Aluno deletado do sistema!");
+                    } else {
+                        // Aulas continuam sendo deletadas direto (só Firestore)
+                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id)); 
+                    }
                 } 
                 catch(e) { alert("Erro ao deletar: " + e.message); }
             }
         }
 
+        // --- CRIAR ALUNO ---
         window.handleCreateStudent = async (e) => {
             e.preventDefault();
             const email = document.getElementById('sale-email').value;
@@ -276,28 +287,22 @@
                     const response = await fetch(CLOUD_FUNCTION_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            client: { name: name, email: email },
-                            event: "purchase_approved"
-                        })
+                        body: JSON.stringify({ client: { name, email }, event: "purchase_approved" })
                     });
                     if (response.ok) {
                         resultDiv.innerHTML = `<div class="bg-green-100 p-3 border-2 border-green-500 text-sm mt-4 rounded shadow-sm"><strong class="text-green-800">✅ E-mail Disparado!</strong></div>`;
-                    } else {
-                        throw new Error("Erro no servidor: " + await response.text());
-                    }
-
+                    } else throw new Error(await response.text());
                 } else {
                     btn.innerText = "CRIANDO LOCAL...";
                     const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
                     
-                    // Inicializa app secundário para criar usuário sem deslogar o admin
                     const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
                     const secondaryAuth = getAuth(secondaryApp);
                     const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPass);
                     const newUid = userCred.user.uid;
-                    await signOut(secondaryAuth); // Desloga do app secundário imediatamente
+                    await signOut(secondaryAuth);
                     
+                    // O trigger 'onUserCreated' no backend vai criar o doc, mas podemos criar aqui pra ser instantâneo na UI
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
                         uid: newUid,
                         name: name,
@@ -309,17 +314,12 @@
                     resultDiv.innerHTML = `
                         <div class="bg-yellow-100 p-3 border-2 border-yellow-500 text-sm mt-4 rounded shadow-sm">
                             <strong class="text-yellow-800">⚠️ Criado (Sem E-mail)</strong>
-                            <div class="mt-2 bg-white p-2 border border-gray-300 rounded font-mono text-xs">
-                                <p><strong>Login:</strong> ${email}</p>
-                                <p><strong>Senha:</strong> ${tempPass}</p>
-                            </div>
+                            <p class="text-xs mt-1">Login: <b>${email}</b> <br> Senha: <b>${tempPass}</b></p>
                         </div>
                     `;
                 }
                 e.target.reset();
-
             } catch (err) {
-                console.error(err);
                 resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold bg-red-100 p-2 border border-red-200">❌ ${err.message}</div>`;
             } finally {
                 btn.disabled = false;
@@ -327,7 +327,7 @@
             }
         }
 
-        // --- GESTÃO DE AULAS (MODAL) ---
+        // --- GESTÃO DE AULAS ---
         window.openCreateLesson = () => {
             editingLessonId = null;
             document.getElementById('lesson-modal-title').innerText = "NOVA AULA";
@@ -335,7 +335,6 @@
             document.getElementById('current-attachment').classList.add('hidden');
             document.getElementById('lesson-modal').classList.remove('hidden');
         }
-
         window.openEditLesson = (id) => {
             const lesson = globalLessons.find(l => l.id === id);
             if(!lesson) return;
@@ -357,15 +356,12 @@
             }
             document.getElementById('lesson-modal').classList.remove('hidden');
         }
-
         window.closeLessonModal = () => document.getElementById('lesson-modal').classList.add('hidden');
-
         window.handleSaveLesson = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('btn-save-lesson');
             btn.innerText = "SALVANDO...";
             btn.disabled = true;
-
             try {
                 const title = document.getElementById('inp-title').value;
                 const moduleName = document.getElementById('inp-module').value;
@@ -380,7 +376,6 @@
                     const snap = await uploadBytes(ref(storage, `artifacts/${appId}/public/videos/${Date.now()}_${fileInput.files[0].name}`), fileInput.files[0]);
                     videoUrl = await getDownloadURL(snap.ref);
                 }
-                
                 let attachmentUrl = null;
                 if (attachInput.files.length > 0) {
                     btn.innerText = "ENVIANDO ANEXO...";
@@ -389,7 +384,6 @@
                 }
 
                 if (!videoUrl && !editingLessonId) throw new Error("Vídeo obrigatório.");
-
                 const data = { title, moduleName, professor, videoUrl, description };
                 if (attachmentUrl) data.attachmentUrl = attachmentUrl;
 
@@ -401,27 +395,16 @@
                 }
                 closeLessonModal();
                 alert(editingLessonId ? "Atualizado!" : "Criado!");
-            } catch (err) {
-                console.error(err);
-                alert("Erro: " + err.message);
-            } finally {
-                btn.innerText = "SALVAR DADOS";
-                btn.disabled = false;
-            }
+            } catch (err) { alert("Erro: " + err.message); } finally { btn.innerText = "SALVAR DADOS"; btn.disabled = false; }
         }
 
-        window.testWebhook = async (e) => {
-            e.preventDefault();
-            alert("Função de Webhook disponível se configurada no backend.");
-        };
-
+        window.testWebhook = async (e) => { e.preventDefault(); alert("Função de Webhook disponível se configurada no backend."); };
         window.toggleVideoInput = (type) => {
             document.getElementById('container-url').classList.toggle('hidden', type !== 'url');
             document.getElementById('container-file').classList.toggle('hidden', type !== 'file');
             document.getElementById('tab-url').className = type === 'url' ? "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow" : "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white";
             document.getElementById('tab-file').className = type === 'file' ? "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow" : "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white";
         }
-
         window.switchTab = (tabId) => {
             ['dashboard', 'lessons', 'students', 'tests'].forEach(id => {
                 document.getElementById('view-'+id).classList.add('hidden');
@@ -430,7 +413,6 @@
             document.getElementById('view-'+tabId).classList.remove('hidden');
             document.getElementById('nav-'+tabId).classList.add('bg-doodle-pink', 'text-white', 'scale-105');
         }
-
         window.filterLessons = (e) => renderLessonsTable(e.target.value);
         window.filterStudents = (e) => renderStudentsTable(e.target.value);
     </script>
@@ -550,7 +532,7 @@
                 <!-- VIEW: STUDENTS -->
                 <div id="view-students" class="hidden flex-col h-full">
                     <div class="grid md:grid-cols-3 gap-6 h-full">
-                        <!-- Novo Aluno (Agora na aba correta) -->
+                        <!-- Novo Aluno -->
                         <div class="col-span-1 bg-white border-4 border-doodle-dark shadow-hard p-6 h-fit">
                             <div class="flex items-center gap-2 mb-4 border-b-2 border-dashed border-gray-300 pb-2">
                                 <i data-lucide="user-plus" class="w-6 h-6 text-doodle-purple"></i>
@@ -576,14 +558,20 @@
                         <div class="col-span-2 bg-white border-4 border-doodle-dark shadow-hard flex flex-col min-h-[500px]">
                             <div class="p-4 border-b-2 border-doodle-dark bg-gray-50 flex justify-between items-center">
                                 <h3 class="font-comic text-xl">BASE DE ALUNOS</h3>
-                                <div class="relative w-64"><i data-lucide="search" class="absolute left-2 top-2 w-4 h-4 text-gray-400"></i><input type="text" onkeyup="filterStudents(event)" placeholder="Buscar aluno..." class="w-full pl-8 py-1 border-2 border-doodle-dark text-sm rounded"></div>
+                                <div class="flex gap-2">
+                                    <!-- NOVO BOTÃO DE SYNC -->
+                                    <button onclick="syncUsers()" id="btn-sync" class="bg-doodle-yellow px-3 py-1 font-bold text-xs border-2 border-doodle-dark flex items-center shadow-sm hover:translate-y-1 transition-transform">
+                                        <i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> SINCRONIZAR AUTH
+                                    </button>
+                                    <div class="relative w-48"><i data-lucide="search" class="absolute left-2 top-2 w-4 h-4 text-gray-400"></i><input type="text" onkeyup="filterStudents(event)" placeholder="Buscar aluno..." class="w-full pl-8 py-1 border-2 border-doodle-dark text-sm rounded"></div>
+                                </div>
                             </div>
                             <div class="overflow-y-auto flex-1 custom-scroll p-0"><table class="w-full text-left"><thead class="bg-gray-100 border-b border-gray-200 text-xs font-bold text-gray-500"><tr><th class="p-3">NOME</th><th class="p-3">EMAIL</th><th class="p-3">DATA</th><th class="p-3 text-right">AÇÃO</th></tr></thead><tbody id="students-table-body"></tbody></table></div>
                         </div>
                     </div>
                 </div>
 
-                <!-- VIEW: TESTS (Antigo test.html) -->
+                <!-- VIEW: TESTS -->
                 <div id="view-tests" class="hidden flex-col h-full space-y-6">
                     <h1 class="font-comic text-4xl text-doodle-dark mb-4">LABORATÓRIO DE TESTES</h1>
                     <div class="bg-white border-4 border-doodle-dark shadow-hard p-6">
