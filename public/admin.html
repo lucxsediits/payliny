@@ -11,65 +11,99 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
         import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
         // =========================================================================
-        // ⚙️ CONFIGURAÇÃO & CREDENCIAIS
+        // ⚙️ CONFIGURAÇÃO
         // =========================================================================
         const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; 
         
-        // ID Real do App (Garante que funcione mesmo rodando local)
+        // Garanta que este ID é o mesmo usado no index.js (Backend)
         const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
 
         const manualConfig = {
-         apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
-         authDomain: "akko-academy.firebaseapp.com",
-         projectId: "akko-academy",
-         storageBucket: "akko-academy.firebasestorage.app",
-         messagingSenderId: "56272587692",
-         appId: REAL_APP_ID,
-         measurementId: "G-461DC2TWB3"
+          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+          authDomain: "akko-academy.firebaseapp.com",
+          projectId: "akko-academy",
+          storageBucket: "akko-academy.firebasestorage.app",
+          messagingSenderId: "56272587692",
+          appId: REAL_APP_ID
         };
 
         const firebaseConfig = manualConfig.apiKey 
             ? manualConfig 
             : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
 
+        // Usa o ID fixo para garantir consistência com as Regras de Segurança
         const appId = REAL_APP_ID;
 
-        // Inicializa App
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         const storage = getStorage(app);
         const functions = getFunctions(app);
 
-        // --- VARIÁVEIS GLOBAIS ---
+        // --- SISTEMA DE ALERTAS ---
+        window.showAlert = (title, msg, type = 'info') => {
+            const modal = document.getElementById('custom-alert');
+            const titleEl = document.getElementById('alert-title');
+            const msgEl = document.getElementById('alert-msg');
+            const iconEl = document.getElementById('alert-icon');
+            const bgEl = document.getElementById('alert-box');
+
+            titleEl.innerText = title;
+            msgEl.innerText = msg; // innerText para segurança, ou innerHTML se precisar
+            
+            // Estilos
+            bgEl.className = "bg-white border-4 border-doodle-dark p-6 max-w-sm w-full relative transform transition-all shadow-[8px_8px_0px_#2D2B38]";
+            
+            if (type === 'error') {
+                titleEl.className = "font-comic text-3xl mb-2 text-red-600";
+                bgEl.classList.add('-rotate-1');
+                iconEl.setAttribute('data-lucide', 'alert-triangle');
+                iconEl.className = "w-10 h-10 text-red-600 absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-12";
+            } else if (type === 'success') {
+                titleEl.className = "font-comic text-3xl mb-2 text-doodle-green";
+                bgEl.classList.add('rotate-1');
+                iconEl.setAttribute('data-lucide', 'check-circle-2');
+                iconEl.className = "w-10 h-10 text-doodle-green absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform rotate-6";
+            } else {
+                titleEl.className = "font-comic text-3xl mb-2 text-doodle-dark";
+                iconEl.setAttribute('data-lucide', 'info');
+                iconEl.className = "w-10 h-10 text-doodle-purple absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-3";
+            }
+
+            lucide.createIcons();
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        window.closeAlert = () => {
+            document.getElementById('custom-alert').classList.add('hidden');
+            document.getElementById('custom-alert').classList.remove('flex');
+        }
+
+        // Variáveis
         let globalLessons = [];
         let globalStudents = [];
         let editingLessonId = null;
         let currentUser = null;
 
-        // --- AUTH INIT ---
-        const initAuth = async () => {
-            const isAdminLogged = localStorage.getItem('adminLoggedIn') === 'true';
-            if (!isAdminLogged && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                try { await signInWithCustomToken(auth, __initial_auth_token); } catch (e) {}
-            }
-        };
-        initAuth();
-
+        // Listener de Auth
         onAuthStateChanged(auth, (user) => {
             if (user) {
+                // Verifica se é o admin correto
                 if(user.email === ADMIN_EMAIL_PERMITIDO) {
                     currentUser = user;
                     localStorage.setItem('adminLoggedIn', 'true');
                     showAdminPanel();
                     initRealtimeListeners();
                 } else {
+                    window.showAlert("ACESSO NEGADO", "Este email não é administrador.", "error");
+                    signOut(auth);
                     showLoginScreen();
                 }
             } else {
@@ -77,30 +111,21 @@
             }
         });
 
-        // --- FUNÇÕES DE LOGIN ---
         window.handleAdminLogin = async (e) => {
             e.preventDefault();
             const email = document.getElementById('login-email').value;
             const pass = document.getElementById('login-pass').value;
             const btn = document.getElementById('btn-login');
-            const errorMsg = document.getElementById('login-error');
-
+            
             btn.disabled = true;
             btn.innerText = "ENTRANDO...";
-            errorMsg.classList.add('hidden');
 
             try {
                 await signInWithEmailAndPassword(auth, email, pass);
-                localStorage.setItem('adminLoggedIn', 'true');
+                // O onAuthStateChanged vai lidar com o resto
             } catch (error) {
-                console.error("Erro login:", error);
-                let msg = "Erro ao entrar. Verifique suas credenciais.";
-                
-                // REMOVIDO: Bloco inseguro de criação automática de admin
-                // Agora o admin deve ser criado apenas via Firebase Console para segurança.
-                
-                errorMsg.innerText = msg;
-                errorMsg.classList.remove('hidden');
+                console.error("Erro Login:", error);
+                window.showAlert("ERRO DE ACESSO", "Email ou senha incorretos.", 'error');
                 btn.disabled = false;
                 btn.innerText = "ENTRAR NO PAINEL";
             }
@@ -125,23 +150,33 @@
 
         // --- DADOS EM TEMPO REAL ---
         function initRealtimeListeners() {
+            // Aulas
             const qLessons = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
             onSnapshot(qLessons, (snapshot) => {
                 globalLessons = [];
                 snapshot.forEach(doc => globalLessons.push({id: doc.id, ...doc.data()}));
+                // Ordena por data
                 globalLessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+                
                 updateDashboardStats();
                 renderLessonsTable();
                 updateModuleDatalist();
+            }, (error) => {
+                console.error("Erro ao ler aulas:", error);
+                if(error.code === 'permission-denied') {
+                    window.showAlert("ERRO DE PERMISSÃO", "Você não tem permissão para ler as aulas. Verifique as Regras do Firestore.", "error");
+                }
             });
 
+            // Alunos
             const qStudents = query(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
             onSnapshot(qStudents, (snapshot) => {
                 globalStudents = [];
                 snapshot.forEach(doc => globalStudents.push({id: doc.id, ...doc.data()}));
-                globalStudents.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 updateDashboardStats();
                 renderStudentsTable();
+            }, (error) => {
+                console.error("Erro ao ler alunos:", error);
             });
         }
 
@@ -175,7 +210,7 @@
             filtered.forEach(lesson => {
                 const tr = document.createElement('tr');
                 tr.className = "border-b border-gray-200 hover:bg-gray-50";
-                const attachIcon = lesson.attachmentUrl ? `<a href="${lesson.attachmentUrl}" target="_blank" class="text-blue-500 hover:scale-125 transition-transform inline-block"><i data-lucide="paperclip" class="w-5 h-5"></i></a>` : `<span class="text-gray-300">-</span>`;
+                const attachIcon = lesson.attachmentUrl ? `<a href="${lesson.attachmentUrl}" target="_blank" class="text-blue-500 hover:scale-110 inline-block"><i data-lucide="paperclip" class="w-4 h-4"></i></a>` : `<span class="text-gray-300">-</span>`;
                 tr.innerHTML = `
                     <td class="p-3 font-comic text-doodle-purple">${lesson.moduleName}</td>
                     <td class="p-3 font-bold text-gray-700">${lesson.title}</td>
@@ -220,36 +255,21 @@
             lucide.createIcons();
         }
 
-        // --- AÇÕES DO SISTEMA (MODIFICADO) ---
-
+        // --- SYNC AUTH (Chama Backend) ---
         window.syncUsers = async () => {
             const btn = document.getElementById('btn-sync');
             btn.disabled = true;
             btn.innerHTML = `<i data-lucide="loader-2" class="animate-spin w-4 h-4 mr-2"></i> PROCESSANDO...`;
             lucide.createIcons();
 
-            if (!auth.currentUser) {
-                alert("Sessão expirada. Por favor, recarregue a página e faça login novamente.");
-                btn.disabled = false;
-                btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> SINCRONIZAR AUTH`;
-                return;
-            }
-
             try {
-                // Chama a Cloud Function com o ID Correto
                 const syncFunc = httpsCallable(functions, 'syncAuthToFirestore');
                 const result = await syncFunc({ appId: appId });
-                
-                alert(`Sucesso! ${result.data.message}`);
-                window.location.reload();
+                window.showAlert("SUCESSO", `${result.data.message}`, 'success');
+                setTimeout(() => window.location.reload(), 1500);
             } catch (error) {
                 console.error(error);
-                let msg = error.message;
-                if (msg.includes('internal')) msg = "Erro interno no servidor. Verifique se fez o 'firebase deploy --only functions'.";
-                if (msg.includes('not found')) msg = "A função não foi encontrada. Faça o deploy.";
-                if (msg.includes('unauthenticated')) msg = "Sessão inválida. Faça login novamente.";
-                
-                alert("Erro ao sincronizar: " + msg);
+                window.showAlert("ERRO SYNC", "Falha ao sincronizar. " + error.message, 'error');
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> SINCRONIZAR AUTH`;
@@ -257,79 +277,104 @@
             }
         }
 
-        window.deleteDocById = async (col, id) => {
-            const msg = col === 'students' 
-                ? "⚠️ ATENÇÃO: Isso vai deletar o LOGIN do aluno e removê-lo da lista. Confirma?" 
-                : "Tem certeza absoluta? Não dá pra desfazer.";
+        // --- SALVAR AULA (Cria/Edita no Firestore) ---
+        window.handleSaveLesson = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('btn-save-lesson');
+            btn.innerText = "SALVANDO...";
+            btn.disabled = true;
+            
+            try {
+                const title = document.getElementById('inp-title').value;
+                const moduleName = document.getElementById('inp-module').value;
+                const professor = document.getElementById('inp-prof').value;
+                const description = document.getElementById('inp-desc').value;
+                let videoUrl = document.getElementById('inp-url').value;
+                const fileInput = document.getElementById('inp-file');
+                const attachInput = document.getElementById('inp-attachment');
+
+                // Upload de Vídeo (se houver arquivo)
+                if (fileInput.files.length > 0) {
+                    btn.innerText = "ENVIANDO VÍDEO...";
+                    const videoRef = ref(storage, `artifacts/${appId}/public/videos/${Date.now()}_${fileInput.files[0].name}`);
+                    const snap = await uploadBytes(videoRef, fileInput.files[0]);
+                    videoUrl = await getDownloadURL(snap.ref);
+                }
+
+                // Upload de Anexo (se houver arquivo)
+                let attachmentUrl = null;
+                if (attachInput.files.length > 0) {
+                    btn.innerText = "ENVIANDO ANEXO...";
+                    const attachRef = ref(storage, `artifacts/${appId}/public/attachments/${Date.now()}_${attachInput.files[0].name}`);
+                    const snapAtt = await uploadBytes(attachRef, attachInput.files[0]);
+                    attachmentUrl = await getDownloadURL(snapAtt.ref);
+                }
+
+                if (!videoUrl && !editingLessonId) throw new Error("O campo de vídeo (Link ou Arquivo) é obrigatório.");
+
+                const data = { 
+                    title, 
+                    moduleName, 
+                    professor, 
+                    videoUrl, 
+                    description 
+                };
                 
-            if(confirm(msg)) {
+                // Só atualiza anexo se tiver um novo ou se for criação
+                if (attachmentUrl) data.attachmentUrl = attachmentUrl;
+
+                if(!editingLessonId) {
+                    // CRIAÇÃO
+                    data.createdAt = serverTimestamp();
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'), data);
+                    window.showAlert("SUCESSO", "Nova aula criada!", 'success');
+                } else {
+                    // EDIÇÃO
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lessons', editingLessonId), data);
+                    window.showAlert("SUCESSO", "Aula atualizada com sucesso!", 'success');
+                }
+                
+                closeLessonModal();
+            } catch (err) {
+                console.error("Erro ao salvar:", err);
+                let msg = err.message;
+                if(err.code === 'permission-denied') msg = "Permissão negada! Verifique se seu email está nas Regras do Firestore.";
+                window.showAlert("ERRO AO SALVAR", msg, 'error');
+            } finally { 
+                btn.innerText = "SALVAR DADOS"; 
+                btn.disabled = false; 
+            }
+        }
+
+        window.deleteDocById = async (col, id) => {
+            if(confirm("Tem certeza que deseja excluir este item?")) {
                 try { 
                     if (col === 'students') {
-                        // Deletar aluno (Auth + Firestore) via Backend
+                        // Deletar aluno via Backend (apaga Auth + Banco)
                         const deleteFunc = httpsCallable(functions, 'deleteStudent');
                         await deleteFunc({ uid: id, appId: appId });
-                        alert("Aluno deletado do sistema!");
+                        window.showAlert("DELETADO", "Aluno removido do sistema.", 'success');
+                        // Remove da tabela visualmente
+                        globalStudents = globalStudents.filter(s => (s.uid !== id && s.id !== id));
+                        renderStudentsTable();
                     } else {
-                        // Aulas deletadas direto (só Firestore)
-                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id)); 
+                        // Deletar aula via Firestore direto
+                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id));
+                        window.showAlert("DELETADO", "Item removido com sucesso.", 'success');
                     }
                 } 
-                catch(e) { alert("Erro ao deletar: " + e.message); }
+                catch(e) { 
+                    console.error(e);
+                    let msg = e.message;
+                    if(e.code === 'permission-denied') msg = "Sem permissão para deletar.";
+                    window.showAlert("ERRO", msg, 'error'); 
+                }
             }
         }
 
-        // --- CRIAR ALUNO ---
-        window.handleCreateStudent = async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('sale-email').value;
-            const name = document.getElementById('sale-name').value;
-            const btn = e.target.querySelector('button');
-            const resultDiv = document.getElementById('sale-result');
-
-            btn.disabled = true;
-            btn.innerText = "PROCESSANDO...";
-            resultDiv.innerHTML = "";
-
-            try {
-                // Criação LOCAL (mais confiável para este ambiente)
-                btn.innerText = "CRIANDO...";
-                const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
-                
-                // Hack: Usa uma segunda instância do app para criar o user sem deslogar o admin
-                const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
-                const secondaryAuth = getAuth(secondaryApp);
-                const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPass);
-                const newUid = userCred.user.uid;
-                await signOut(secondaryAuth);
-                
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
-                    uid: newUid,
-                    name: name,
-                    email: email,
-                    passwordTemp: tempPass,
-                    createdAt: serverTimestamp()
-                });
-
-                resultDiv.innerHTML = `
-                    <div class="bg-yellow-100 p-3 border-2 border-yellow-500 text-sm mt-4 rounded shadow-sm">
-                        <strong class="text-yellow-800">✅ Criado com Sucesso!</strong>
-                        <p class="text-xs mt-1">Login: <b>${email}</b> <br> Senha Provisória: <b>${tempPass}</b></p>
-                        <p class="text-[10px] text-gray-500 mt-1">(Envie estes dados para o aluno)</p>
-                    </div>
-                `;
-                
-                e.target.reset();
-            } catch (err) {
-                let msg = err.message;
-                if (err.code === 'auth/email-already-in-use') msg = "Este email já está cadastrado!";
-                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold bg-red-100 p-2 border border-red-200">❌ ${msg}</div>`;
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "CADASTRAR ALUNO";
-            }
-        }
-
-        // --- GESTÃO DE AULAS ---
+        // --- MODAIS E UI ---
+        window.handleCreateStudent = async (e) => { e.preventDefault(); alert("Use o Lab de Testes para criar alunos."); }
+        
         window.openCreateLesson = () => {
             editingLessonId = null;
             document.getElementById('lesson-modal-title').innerText = "NOVA AULA";
@@ -337,6 +382,7 @@
             document.getElementById('current-attachment').classList.add('hidden');
             document.getElementById('lesson-modal').classList.remove('hidden');
         }
+        
         window.openEditLesson = (id) => {
             const lesson = globalLessons.find(l => l.id === id);
             if(!lesson) return;
@@ -358,49 +404,8 @@
             }
             document.getElementById('lesson-modal').classList.remove('hidden');
         }
+        
         window.closeLessonModal = () => document.getElementById('lesson-modal').classList.add('hidden');
-        window.handleSaveLesson = async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('btn-save-lesson');
-            btn.innerText = "SALVANDO...";
-            btn.disabled = true;
-            try {
-                const title = document.getElementById('inp-title').value;
-                const moduleName = document.getElementById('inp-module').value;
-                const professor = document.getElementById('inp-prof').value;
-                const description = document.getElementById('inp-desc').value;
-                let videoUrl = document.getElementById('inp-url').value;
-                const fileInput = document.getElementById('inp-file');
-                const attachInput = document.getElementById('inp-attachment');
-
-                if (fileInput.files.length > 0) {
-                    btn.innerText = "ENVIANDO VÍDEO...";
-                    const snap = await uploadBytes(ref(storage, `artifacts/${appId}/public/videos/${Date.now()}_${fileInput.files[0].name}`), fileInput.files[0]);
-                    videoUrl = await getDownloadURL(snap.ref);
-                }
-                let attachmentUrl = null;
-                if (attachInput.files.length > 0) {
-                    btn.innerText = "ENVIANDO ANEXO...";
-                    const snapAtt = await uploadBytes(ref(storage, `artifacts/${appId}/public/attachments/${Date.now()}_${attachInput.files[0].name}`), attachInput.files[0]);
-                    attachmentUrl = await getDownloadURL(snapAtt.ref);
-                }
-
-                if (!videoUrl && !editingLessonId) throw new Error("Vídeo obrigatório.");
-                const data = { title, moduleName, professor, videoUrl, description };
-                if (attachmentUrl) data.attachmentUrl = attachmentUrl;
-
-                if(!editingLessonId) {
-                    data.createdAt = serverTimestamp();
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'), data);
-                } else {
-                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lessons', editingLessonId), data);
-                }
-                closeLessonModal();
-                alert(editingLessonId ? "Atualizado!" : "Criado!");
-            } catch (err) { alert("Erro: " + err.message); } finally { btn.innerText = "SALVAR DADOS"; btn.disabled = false; }
-        }
-
-        window.testWebhook = async (e) => { e.preventDefault(); alert("Função de Webhook disponível se configurada no backend."); };
         window.toggleVideoInput = (type) => {
             document.getElementById('container-url').classList.toggle('hidden', type !== 'url');
             document.getElementById('container-file').classList.toggle('hidden', type !== 'file');
@@ -433,6 +438,16 @@
 </head>
 <body class="bg-[#F3F4F6] text-[#2D2B38] font-sans h-screen flex overflow-hidden">
 
+    <!-- CUSTOM ALERT POPUP -->
+    <div id="custom-alert" class="fixed inset-0 z-[200] hidden items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity">
+        <div id="alert-box" class="bg-white border-4 border-doodle-dark shadow-[8px_8px_0px_#2D2B38] p-6 max-w-sm w-full transform relative transition-all">
+            <i id="alert-icon" data-lucide="info" class="w-10 h-10 text-doodle-purple absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-6"></i>
+            <h3 id="alert-title" class="font-comic text-3xl mb-2 text-doodle-dark">TÍTULO</h3>
+            <p id="alert-msg" class="font-marker text-lg text-gray-600 mb-6 leading-snug">Mensagem aqui.</p>
+            <button onclick="closeAlert()" class="w-full bg-doodle-yellow font-comic text-2xl py-2 border-2 border-doodle-dark shadow-sm hover:translate-y-1 hover:shadow-none transition-all rounded-lg">ENTENDIDO</button>
+        </div>
+    </div>
+
     <!-- LOGIN SCREEN -->
     <div id="login-screen" class="fixed inset-0 z-50 bg-doodle-dark flex items-center justify-center">
         <div class="bg-white p-8 border-4 border-doodle-pink shadow-[10px_10px_0px_#fff] max-w-sm w-full transform rotate-1">
@@ -450,7 +465,6 @@
                     ENTRAR NO PAINEL
                 </button>
             </form>
-            <p id="login-error" class="text-red-500 font-bold text-center mt-4 hidden text-sm"></p>
         </div>
     </div>
 
@@ -534,26 +548,16 @@
                 <!-- VIEW: STUDENTS -->
                 <div id="view-students" class="hidden flex-col h-full">
                     <div class="grid md:grid-cols-3 gap-6 h-full">
-                        <!-- Novo Aluno -->
-                        <div class="col-span-1 bg-white border-4 border-doodle-dark shadow-hard p-6 h-fit">
+                        <!-- Novo Aluno (Bloqueado - Use o Lab) -->
+                        <div class="col-span-1 bg-white border-4 border-doodle-dark shadow-hard p-6 h-fit opacity-70">
                             <div class="flex items-center gap-2 mb-4 border-b-2 border-dashed border-gray-300 pb-2">
                                 <i data-lucide="user-plus" class="w-6 h-6 text-doodle-purple"></i>
                                 <h2 class="font-comic text-2xl">NOVO ALUNO</h2>
                             </div>
-                            <form onsubmit="handleCreateStudent(event)" class="space-y-4">
-                                <div>
-                                    <label class="text-xs font-bold text-gray-500">NOME</label>
-                                    <input type="text" id="sale-name" class="w-full border-2 border-doodle-dark p-2 rounded" placeholder="Nome Completo" required>
-                                </div>
-                                <div>
-                                    <label class="text-xs font-bold text-gray-500">EMAIL</label>
-                                    <input type="email" id="sale-email" class="w-full border-2 border-doodle-dark p-2 rounded" placeholder="email@exemplo.com" required>
-                                </div>
-                                <button class="w-full py-2 bg-doodle-purple text-white font-comic text-xl border-2 border-doodle-dark shadow-sm hover:bg-doodle-pink transition-colors">
-                                    CADASTRAR ALUNO
-                                </button>
-                            </form>
-                            <div id="sale-result"></div>
+                            <div class="text-center text-sm font-bold text-gray-500 py-10">
+                                Para criar alunos, use o<br>
+                                <button onclick="switchTab('tests')" class="text-blue-600 underline">LAB DE TESTES</button>
+                            </div>
                         </div>
 
                         <!-- Lista -->
@@ -573,19 +577,22 @@
                     </div>
                 </div>
 
-                <!-- VIEW: TESTS -->
+                <!-- VIEW: TESTS (LAB) -->
                 <div id="view-tests" class="hidden flex-col h-full space-y-6">
                     <h1 class="font-comic text-4xl text-doodle-dark mb-4">LABORATÓRIO DE TESTES</h1>
-                    <div class="bg-white border-4 border-doodle-dark shadow-hard p-6">
-                        <h3 class="font-marker text-xl mb-2 text-doodle-green">2. Testar Webhook (Email)</h3>
-                        <p class="text-xs text-gray-500 mb-4">Simula uma venda da Hotmart/Cakto.</p>
-                        <input type="url" id="webhook-url" class="w-full border-2 border-doodle-dark p-2 text-sm mb-2" placeholder="Cole a URL da Cloud Function aqui">
-                        <div class="flex gap-2 mb-2">
-                            <input type="text" id="webhook-name" value="Teste Webhook" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
-                            <input type="email" id="webhook-email" value="teste@webhook.com" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
+                    <div class="grid grid-cols-2 gap-6">
+                        <!-- TESTE 1: WEBHOOK -->
+                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-6">
+                            <h3 class="font-marker text-xl mb-2 text-doodle-green">1. Testar Webhook (Email)</h3>
+                            <p class="text-xs text-gray-500 mb-4">Simula uma venda da Hotmart/Cakto.</p>
+                            <input type="url" id="webhook-url" class="w-full border-2 border-doodle-dark p-2 text-sm mb-2" placeholder="Cole a URL da Cloud Function aqui">
+                            <div class="flex gap-2 mb-2">
+                                <input type="text" id="webhook-name" value="Teste Webhook" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
+                                <input type="email" id="webhook-email" value="teste@webhook.com" class="w-1/2 border-2 border-doodle-dark p-2 text-sm">
+                            </div>
+                            <button onclick="testWebhook(event)" id="btn-webhook" class="w-full bg-doodle-green border-2 border-doodle-dark font-bold py-2 shadow-sm hover:translate-y-1 transition-transform">DISPARAR TESTE</button>
+                            <div id="log-webhook" class="mt-2 text-xs h-20 overflow-y-auto bg-gray-100 p-2 border border-doodle-dark/20 text-gray-600 font-mono">Logs aparecerão aqui...</div>
                         </div>
-                        <button onclick="testWebhook(event)" class="w-full bg-doodle-green border-2 border-doodle-dark font-bold py-2 shadow-sm">DISPARAR TESTE</button>
-                        <div id="log-webhook" class="mt-2 text-xs h-10 bg-gray-100 p-2 border border-doodle-dark/20"></div>
                     </div>
                 </div>
 

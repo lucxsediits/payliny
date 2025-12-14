@@ -84,7 +84,7 @@
             currentUser = user;
             const statusDiv = document.getElementById('auth-status');
             if (user) {
-                statusDiv.innerHTML = `Logado como: <span class="text-green-400">${user.email}</span> (${user.uid.slice(0,5)})`;
+                statusDiv.innerHTML = `Logado como: <span class="text-green-400">${user.email || 'Anônimo'}</span> (${user.uid.slice(0,5)})`;
                 localStorage.setItem('userLoggedIn', 'true');
                 
                 // Se for admin, libera acesso visual
@@ -196,7 +196,6 @@
 
         // --- 5. LÓGICA: ÁREA DE MEMBROS ---
         function initMemberListeners() {
-            // Reutiliza a query de lessons mas atualiza a UI de membros
             const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
             onSnapshot(q, (snap) => {
                 currentLessons = [];
@@ -210,7 +209,7 @@
                 onSnapshot(pRef, (snap) => {
                     completedLessonIds.clear();
                     snap.forEach(d => completedLessonIds.add(d.id));
-                    renderMemberSidebar(); // Re-render para atualizar checks
+                    renderMemberSidebar();
                     updateProgressUI();
                 });
             }
@@ -288,7 +287,9 @@
             document.getElementById('prog-text').innerText = `${pct}%`;
         }
 
-        // --- 6. LÓGICA: LAB DE TESTES ---
+        // --- 6. LÓGICA: LAB DE TESTES (MERGED) ---
+        
+        // A. Gerador de Dados
         window.generateTestUsers = async () => {
             const log = document.getElementById('lab-log');
             log.innerHTML = "Gerando...";
@@ -296,7 +297,7 @@
                 for(let i=0; i<3; i++) {
                     const name = `Aluno Teste ${Math.floor(Math.random()*1000)}`;
                     const email = `teste.${Date.now()}@exemplo.com`;
-                    // Cria direto no Firestore (simula webhook)
+                    // Cria direto no Firestore
                     await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
                         name, email, uid: `mock_${Date.now()}`, createdAt: serverTimestamp()
                     });
@@ -305,6 +306,42 @@
                 log.innerHTML += "<br><b>Concluído! Veja no Admin.</b>";
             } catch(e) { log.innerText = "Erro: " + e.message; }
         }
+
+        // B. Teste de Webhook (Trazido do antigo test.html)
+        window.testWebhook = async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('webhook-url').value;
+            const email = document.getElementById('webhook-email').value;
+            const name = document.getElementById('webhook-name').value;
+            const log = document.getElementById('log-webhook');
+            const btn = document.getElementById('btn-webhook');
+
+            if(!url) { alert("Cole a URL da função!"); return; }
+
+            btn.disabled = true;
+            btn.innerText = "ENVIANDO...";
+            log.innerHTML = "Enviando POST...";
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        client: { name, email },
+                        event: "purchase_approved",
+                        product_id: "test_prod_123"
+                    })
+                });
+
+                const text = await response.text();
+                log.innerHTML = `<div class="bg-gray-100 p-2 border text-xs mt-2">Status: ${response.status}<br>Resp: ${text}</div>`;
+            } catch (error) {
+                log.innerHTML = `<div class="text-red-600 mt-2">Erro: ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "DISPARAR";
+            }
+        };
 
         // Init Icons
         lucide.createIcons();
@@ -443,12 +480,13 @@
 
         <!-- === VIEW 4: LAB TESTES === -->
         <div id="view-lab" class="hidden absolute inset-0 flex items-center justify-center bg-[#2D2B38]">
-            <div class="max-w-2xl w-full grid grid-cols-2 gap-8">
+            <div class="max-w-4xl w-full grid grid-cols-2 gap-8">
                 <div class="col-span-2 text-center text-white mb-4">
                     <h1 class="font-comic text-5xl text-doodle-yellow">LABORATÓRIO</h1>
                     <p class="font-marker opacity-70">Use para popular o banco de dados sem esforço.</p>
                 </div>
 
+                <!-- PAINEL 1: Gerador -->
                 <div class="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_#F2E058] transform -rotate-1">
                     <h3 class="font-bold text-xl mb-2">GERADOR DE DADOS</h3>
                     <p class="text-sm mb-4">Cria 3 alunos fictícios e salva no Firestore instantaneamente.</p>
@@ -456,16 +494,17 @@
                     <div id="lab-log" class="mt-2 text-xs h-24 overflow-y-auto bg-gray-100 p-2 border border-gray-300">Aguardando...</div>
                 </div>
 
+                <!-- PAINEL 2: Webhook (Adicionado) -->
                 <div class="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_#89F279] transform rotate-1">
-                    <h3 class="font-bold text-xl mb-2">INFO DO SISTEMA</h3>
-                    <ul class="text-sm space-y-2">
-                        <li><b>App ID:</b> <span class="font-mono bg-gray-200 px-1">1:56272587692...</span></li>
-                        <li><b>Firestore:</b> Conectado</li>
-                        <li><b>Auth:</b> Ativo</li>
-                    </ul>
-                    <div class="mt-4 p-2 bg-yellow-100 border border-yellow-400 text-xs text-yellow-800">
-                        Este painel simula todas as funções sem precisar de deploy.
-                    </div>
+                    <h3 class="font-bold text-xl mb-2">TESTAR WEBHOOK</h3>
+                    <p class="text-sm mb-2">Simule uma venda da Hotmart/Cakto.</p>
+                    <form onsubmit="testWebhook(event)" class="space-y-2">
+                        <input type="url" id="webhook-url" class="w-full text-xs p-2 border border-black bg-gray-50" placeholder="https://.../handleNewSale" required>
+                        <input type="email" id="webhook-email" class="w-full text-xs p-2 border border-black bg-gray-50" placeholder="email@teste.com" required>
+                        <input type="text" id="webhook-name" class="w-full text-xs p-2 border border-black bg-gray-50" value="Teste Webhook">
+                        <button type="submit" id="btn-webhook" class="w-full bg-doodle-green font-bold text-sm py-2 border border-black hover:bg-white">DISPARAR</button>
+                    </form>
+                    <div id="log-webhook" class="mt-2 text-xs h-20 overflow-y-auto bg-gray-100 p-2 border border-gray-300">Logs aqui...</div>
                 </div>
             </div>
         </div>
