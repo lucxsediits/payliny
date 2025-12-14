@@ -19,9 +19,8 @@
         // =========================================================================
         // ⚙️ CONFIGURAÇÃO & CREDENCIAIS
         // =========================================================================
-        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; // Seu email de admin
-        const CLOUD_FUNCTION_URL = ""; 
-
+        const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; 
+        
         // ID Real do App (Garante que funcione mesmo rodando local)
         const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
 
@@ -39,15 +38,14 @@
             ? manualConfig 
             : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
 
-        // Usa o ID injetado pelo hosting OU o ID real hardcoded (fallback de segurança)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : REAL_APP_ID;
+        const appId = REAL_APP_ID;
 
         // Inicializa App
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
         const storage = getStorage(app);
-        const functions = getFunctions(app); // Conecta com o Backend
+        const functions = getFunctions(app);
 
         // --- VARIÁVEIS GLOBAIS ---
         let globalLessons = [];
@@ -182,7 +180,7 @@
             filtered.forEach(lesson => {
                 const tr = document.createElement('tr');
                 tr.className = "border-b border-gray-200 hover:bg-gray-50";
-                const attachIcon = lesson.attachmentUrl ? `<a href="${lesson.attachmentUrl}" target="_blank" class="text-blue-500"><i data-lucide="paperclip" class="w-4 h-4 inline"></i></a>` : `<span class="text-gray-300">-</span>`;
+                const attachIcon = lesson.attachmentUrl ? `<a href="${lesson.attachmentUrl}" target="_blank" class="text-blue-500 hover:scale-125 transition-transform inline-block"><i data-lucide="paperclip" class="w-5 h-5"></i></a>` : `<span class="text-gray-300">-</span>`;
                 tr.innerHTML = `
                     <td class="p-3 font-comic text-doodle-purple">${lesson.moduleName}</td>
                     <td class="p-3 font-bold text-gray-700">${lesson.title}</td>
@@ -229,12 +227,18 @@
 
         // --- AÇÕES DO SISTEMA (MODIFICADO) ---
 
-        // NOVO: Sincronizar Auth -> Firestore
         window.syncUsers = async () => {
             const btn = document.getElementById('btn-sync');
             btn.disabled = true;
             btn.innerHTML = `<i data-lucide="loader-2" class="animate-spin w-4 h-4 mr-2"></i> PROCESSANDO...`;
             lucide.createIcons();
+
+            if (!auth.currentUser) {
+                alert("Sessão expirada. Por favor, recarregue a página e faça login novamente.");
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> SINCRONIZAR AUTH`;
+                return;
+            }
 
             try {
                 // Chama a Cloud Function com o ID Correto
@@ -242,13 +246,13 @@
                 const result = await syncFunc({ appId: appId });
                 
                 alert(`Sucesso! ${result.data.message}`);
-                // Recarrega a página para atualizar a tabela visualmente se necessário
                 window.location.reload();
             } catch (error) {
                 console.error(error);
                 let msg = error.message;
-                // Mensagem amigável para o erro comum de Auth
-                if (msg.includes('unauthenticated')) msg = "Sessão expirada. Faça login novamente no painel.";
+                if (msg.includes('internal')) msg = "Erro interno no servidor. Verifique se fez o 'firebase deploy --only functions'.";
+                if (msg.includes('not found')) msg = "A função não foi encontrada. Faça o deploy.";
+                if (msg.includes('unauthenticated')) msg = "Sessão inválida. Faça login novamente.";
                 
                 alert("Erro ao sincronizar: " + msg);
             } finally {
@@ -292,41 +296,33 @@
             resultDiv.innerHTML = "";
 
             try {
-                if (CLOUD_FUNCTION_URL) {
-                    btn.innerText = "ENVIANDO WEBHOOK...";
-                    const response = await fetch(CLOUD_FUNCTION_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ client: { name, email }, event: "purchase_approved" })
-                    });
-                    if (response.ok) {
-                        resultDiv.innerHTML = `<div class="bg-green-100 p-3 border-2 border-green-500 text-sm mt-4 rounded shadow-sm"><strong class="text-green-800">✅ E-mail Disparado!</strong></div>`;
-                    } else throw new Error(await response.text());
-                } else {
-                    btn.innerText = "CRIANDO LOCAL...";
-                    const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
-                    
-                    const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
-                    const secondaryAuth = getAuth(secondaryApp);
-                    const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPass);
-                    const newUid = userCred.user.uid;
-                    await signOut(secondaryAuth);
-                    
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
-                        uid: newUid,
-                        name: name,
-                        email: email,
-                        passwordTemp: tempPass,
-                        createdAt: serverTimestamp()
-                    });
+                // Criação LOCAL (mais confiável para este ambiente)
+                btn.innerText = "CRIANDO...";
+                const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
+                
+                // Hack: Usa uma segunda instância do app para criar o user sem deslogar o admin
+                const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+                const secondaryAuth = getAuth(secondaryApp);
+                const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPass);
+                const newUid = userCred.user.uid;
+                await signOut(secondaryAuth);
+                
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
+                    uid: newUid,
+                    name: name,
+                    email: email,
+                    passwordTemp: tempPass,
+                    createdAt: serverTimestamp()
+                });
 
-                    resultDiv.innerHTML = `
-                        <div class="bg-yellow-100 p-3 border-2 border-yellow-500 text-sm mt-4 rounded shadow-sm">
-                            <strong class="text-yellow-800">⚠️ Criado (Sem E-mail)</strong>
-                            <p class="text-xs mt-1">Login: <b>${email}</b> <br> Senha: <b>${tempPass}</b></p>
-                        </div>
-                    `;
-                }
+                resultDiv.innerHTML = `
+                    <div class="bg-yellow-100 p-3 border-2 border-yellow-500 text-sm mt-4 rounded shadow-sm">
+                        <strong class="text-yellow-800">✅ Criado com Sucesso!</strong>
+                        <p class="text-xs mt-1">Login: <b>${email}</b> <br> Senha Provisória: <b>${tempPass}</b></p>
+                        <p class="text-[10px] text-gray-500 mt-1">(Envie estes dados para o aluno)</p>
+                    </div>
+                `;
+                
                 e.target.reset();
             } catch (err) {
                 let msg = err.message;

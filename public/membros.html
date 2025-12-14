@@ -14,6 +14,9 @@
         import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
+        // =========================================================================
+        // ⚙️ CONFIGURAÇÃO UNIFICADA (A MESMA DO ADMIN)
+        // =========================================================================
         const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
 
         const manualConfig = {
@@ -30,8 +33,7 @@
             ? manualConfig 
             : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
 
-        // Usa o ID Real sempre, para garantir consistência dos dados de progresso
-        const appId = REAL_APP_ID; 
+        const appId = REAL_APP_ID;
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -47,7 +49,7 @@
                 desc: 'Presets, Transições e SFX',
                 icon: 'package', 
                 price: 'R$ 49,99',
-                link: '#' // Coloque seu link de checkout aqui
+                link: '#' 
             },
             { 
                 id: 'mmv-pc', 
@@ -75,25 +77,20 @@
         // Auth Init
         const initAuth = async () => {
              const hasManualLogin = localStorage.getItem('userLoggedIn') === 'true';
-
              if (!hasManualLogin && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                try {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } catch(e) {}
+                try { await signInWithCustomToken(auth, __initial_auth_token); } catch(e) {}
             }
         };
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
-            // FIX: Removemos o loading overlay apenas quando o estado de auth é resolvido
-            document.getElementById('global-loader').classList.add('hidden');
+            const loader = document.getElementById('global-loader');
+            if(loader) loader.classList.add('hidden');
 
             if (!user) {
-                // Se não tem usuário, manda pro login
                 window.location.href = 'index.html';
             } else {
                 currentUser = user;
-                // Tenta pegar nome do localStorage se não tiver no user auth
                 const userName = localStorage.getItem('userName') || user.email || 'Aluno';
                 const initials = userName.charAt(0).toUpperCase();
                 document.getElementById('user-avatar').innerText = initials;
@@ -131,15 +128,12 @@
         }
 
         function loadUserProgress(userId) {
-            // Caminho corrigido com appId consistente
             const progressRef = collection(db, 'artifacts', appId, 'users', userId, 'progress');
             onSnapshot(progressRef, (snapshot) => {
                 completedLessonIds.clear();
                 snapshot.forEach(doc => completedLessonIds.add(doc.id));
                 updateUI();
                 updateCurrentLessonButtonState();
-            }, (error) => {
-                console.error("Erro ao carregar progresso:", error);
             });
         }
 
@@ -167,7 +161,6 @@
             
             sidebarContent.innerHTML = '';
 
-            // --- SEÇÃO 1: AULAS DO CURSO ATUAL ---
             const modules = {};
             currentLessons.forEach((lesson, index) => {
                 if (!modules[lesson.moduleName]) modules[lesson.moduleName] = [];
@@ -175,7 +168,6 @@
             });
 
             if (Object.keys(modules).length > 0) {
-                // Título da seção
                 const sectionTitle = document.createElement('div');
                 sectionTitle.className = "px-2 py-3 font-marker text-doodle-purple text-lg transform -rotate-1 border-b-2 border-dashed border-doodle-dark/30 mb-2 mt-2";
                 sectionTitle.innerText = "MEUS MÓDULOS";
@@ -238,8 +230,7 @@
                 sidebarContent.appendChild(details);
             });
 
-            // --- SEÇÃO 2: PRODUTOS EXTRAS (LOJA) ---
-            
+            // LOJA
             const storeTitle = document.createElement('div');
             storeTitle.className = "px-2 py-3 font-marker text-doodle-pink text-lg transform rotate-1 border-t-4 border-doodle-dark mt-8 mb-4 bg-doodle-dark/5";
             storeTitle.innerHTML = "⚡ TURBINE SUA EDIÇÃO";
@@ -275,7 +266,7 @@
 
         window.openPurchaseModal = (product) => {
             if(confirm(`Você deseja ir para a página de compra do ${product.title} por ${product.price}?`)) {
-                // window.open(product.link, '_blank'); // Descomente para funcionar o link real
+                // window.open(product.link, '_blank'); 
             }
         };
 
@@ -288,6 +279,17 @@
             document.getElementById('lesson-desc').innerText = lesson.description || 'Sem descrição.';
             document.getElementById('module-bread').innerText = lesson.moduleName;
             document.getElementById('lesson-bread').innerText = lesson.title;
+
+            // --- LÓGICA DO ANEXO (NOVO) ---
+            const btnAttach = document.getElementById('btn-attachment');
+            if (lesson.attachmentUrl) {
+                btnAttach.href = lesson.attachmentUrl;
+                btnAttach.classList.remove('hidden');
+                btnAttach.classList.add('flex');
+            } else {
+                btnAttach.classList.add('hidden');
+                btnAttach.classList.remove('flex');
+            }
 
             const btn = document.getElementById('btn-mark-completed');
             if(btn) btn.style.display = 'flex';
@@ -326,17 +328,15 @@
              document.getElementById('module-bread').innerText = "Área de Membros";
              document.getElementById('lesson-bread').innerText = "Início";
              
-             const btn = document.getElementById('btn-mark-completed');
-             if(btn) btn.style.display = 'none';
+             document.getElementById('btn-mark-completed').style.display = 'none';
+             document.getElementById('btn-attachment').classList.add('hidden');
 
              document.getElementById('video-player-container').innerHTML = `
                 <div class="w-full h-full flex flex-col items-center justify-center bg-doodle-dark text-white font-comic text-2xl p-8 text-center gap-4 relative overflow-hidden">
                     <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#fff 2px, transparent 2px); background-size: 20px 20px;"></div>
-                    
                     <div class="w-24 h-24 bg-doodle-purple border-4 border-doodle-dark rounded-full flex items-center justify-center shadow-hard hover:scale-110 transition-transform">
                         <i data-lucide="mouse-pointer-2" class="w-10 h-10 text-white transform -rotate-12"></i>
                     </div>
-                    
                     <div class="z-10 mt-2">
                         <p class="text-3xl text-doodle-yellow mb-2 transform -rotate-1">PRONTO PARA COMEÇAR?</p>
                         <p class="font-sans text-base opacity-80 max-w-sm mx-auto">Selecione um módulo na lista à esquerda e clique na primeira aula!</p>
@@ -384,7 +384,6 @@
             if (currentLessonIndex === -1 || !currentUser) return;
             
             const lesson = currentLessons[currentLessonIndex];
-            // Caminho seguro usando appId consistente e uid do auth
             const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'progress', lesson.id);
             const btn = document.getElementById('btn-mark-completed');
             
@@ -400,8 +399,7 @@
                     });
                 }
             } catch (error) {
-                console.error("Erro ao salvar progresso:", error);
-                alert("Erro ao salvar progresso. Verifique se está logado.");
+                console.error("Erro:", error);
             } finally {
                 btn.classList.remove('opacity-50', 'pointer-events-none');
             }
@@ -725,8 +723,14 @@
                         <path d="M15 80 L15 30 A 10 10 0 0 1 35 30 L 35 90 A 10 10 0 0 1 15 90 L 15 80" />
                     </svg>
 
-                    <div class="flex flex-wrap gap-4 border-b-4 border-doodle-dark mb-6 pb-2">
+                    <div class="flex flex-wrap items-center justify-between gap-4 border-b-4 border-doodle-dark mb-6 pb-2">
                         <button class="px-6 py-2 bg-doodle-pink border-2 border-doodle-dark font-comic text-xl text-white shadow-hard-sm transform -rotate-2 hover:rotate-0 transition-transform">DESCRIÇÃO</button>
+                        
+                        <!-- BOTÃO DE ANEXO (NOVO) -->
+                        <a id="btn-attachment" href="#" target="_blank" class="hidden items-center gap-2 px-4 py-2 bg-doodle-yellow border-2 border-doodle-dark font-comic text-lg text-doodle-dark shadow-hard-sm transform rotate-1 hover:-rotate-1 transition-transform hover:bg-white">
+                            <i data-lucide="download" class="w-5 h-5"></i>
+                            MATERIAL DE APOIO
+                        </a>
                     </div>
 
                     <div class="prose prose-lg max-w-none text-doodle-dark font-sans">
