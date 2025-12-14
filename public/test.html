@@ -3,258 +3,474 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Akko Academy - Painel de Testes</title>
+    <title>Akko Academy - Sistema Integrado</title>
+    
+    <!-- Dependências Visuais -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // =========================================================================
-        // ⚙️ CONFIGURAÇÃO DO FIREBASE (COLE AQUI A MESMA DO ADMIN)
-        // =========================================================================
-        const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
-
-        const manualConfig = {
-         apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
-         authDomain: "akko-academy.firebaseapp.com",
-         projectId: "akko-academy",
-         storageBucket: "akko-academy.firebasestorage.app",
-         messagingSenderId: "56272587692",
-         appId: REAL_APP_ID,
-         measurementId: "G-461DC2TWB3"
-        };
-
-        const firebaseConfig = manualConfig.apiKey 
-            ? manualConfig 
-            : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
-
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const auth = getAuth(app);
-
-        // Autenticação anónima para ter permissão de escrita
-        signInAnonymously(auth);
-
-        // --- 1. GERAR DADOS FICTÍCIOS ---
-        const firstNames = ["Ana", "Bruno", "Carlos", "Diana", "Eduardo", "Fernanda", "Gabriel", "Helena"];
-        const lastNames = ["Silva", "Santos", "Oliveira", "Souza", "Pereira", "Costa", "Ferreira"];
-
-        window.generateData = async () => {
-            const btn = document.getElementById('btn-generate');
-            const log = document.getElementById('log-generate');
-            btn.disabled = true;
-            btn.innerText = "A GERAR...";
-            log.innerHTML = "";
-
-            try {
-                for (let i = 0; i < 5; i++) {
-                    const name = `${firstNames[Math.floor(Math.random() * firstNames.length)]} ${lastNames[Math.floor(Math.random() * lastNames.length)]}`;
-                    const email = `aluno.teste.${Math.floor(Math.random() * 1000)}@exemplo.com`;
-                    
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
-                        name: name,
-                        email: email,
-                        uid: "simulated_uid_" + Date.now(),
-                        createdAt: serverTimestamp()
-                    });
-                    
-                    log.innerHTML += `<div class="text-green-600 text-xs">✔ Criado: ${name}</div>`;
-                }
-                log.innerHTML += `<div class="text-doodle-dark font-bold mt-2">✅ Concluído! Atualize o Admin.</div>`;
-            } catch (error) {
-                console.error(error);
-                log.innerHTML += `<div class="text-red-500 font-bold">Erro: ${error.message}</div>`;
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "GERAR 5 ALUNOS";
-            }
-        };
-
-        // --- 2. TESTAR WEBHOOK REAL ---
-        window.testWebhook = async (e) => {
-            e.preventDefault();
-            const url = document.getElementById('webhook-url').value;
-            const email = document.getElementById('webhook-email').value;
-            const name = document.getElementById('webhook-name').value;
-            const log = document.getElementById('log-webhook');
-            const btn = document.getElementById('btn-webhook');
-
-            if(!url) {
-                alert("Cole a URL da sua Cloud Function primeiro!");
-                return;
-            }
-
-            btn.disabled = true;
-            btn.innerText = "A ENVIAR...";
-            log.innerHTML = "A enviar pedido POST para o servidor...";
-
-            try {
-                // Simula o payload que a Cakto/Hotmart envia
-                const payload = {
-                    client: {
-                        name: name,
-                        email: email
-                    },
-                    event: "purchase_approved"
-                };
-
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                const text = await response.text();
-
-                if (response.ok) {
-                    log.innerHTML = `
-                        <div class="bg-green-100 border border-green-500 text-green-800 p-2 rounded mt-2 text-xs">
-                            <strong>SUCESSO (200 OK)</strong><br>
-                            O servidor aceitou a venda.<br>
-                            Verifique o email <em>${email}</em> (e a caixa de spam).
-                        </div>
-                    `;
-                } else {
-                    log.innerHTML = `
-                        <div class="bg-red-100 border border-red-500 text-red-800 p-2 rounded mt-2 text-xs">
-                            <strong>ERRO (${response.status})</strong><br>
-                            ${text}
-                        </div>
-                    `;
-                }
-
-            } catch (error) {
-                log.innerHTML = `<div class="text-red-600">Erro de Rede: ${error.message}</div>`;
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "DISPARAR WEBHOOK";
-            }
-        };
-    </script>
-
-    <style>
-        body {
-            background-color: #2D2B38;
-            background-image: radial-gradient(#3E3B4B 2px, transparent 2px);
-            background-size: 20px 20px;
-            color: #2D2B38;
-        }
-        .panel {
-            background: #F8F9FD;
-            box-shadow: 8px 8px 0px #000;
-            border: 3px solid #000;
-        }
-        .btn-action {
-            border: 2px solid #000;
-            box-shadow: 4px 4px 0px #000;
-            transition: all 0.1s;
-        }
-        .btn-action:active {
-            transform: translate(2px, 2px);
-            box-shadow: 0px 0px 0px #000;
-        }
-    </style>
-</head>
-<body class="min-h-screen flex items-center justify-center p-4 font-sans">
-
-    <div class="max-w-4xl w-full grid md:grid-cols-2 gap-8">
-        
-        <!-- HEADER -->
-        <div class="col-span-1 md:col-span-2 text-center mb-4">
-            <h1 class="font-comic text-5xl text-doodle-yellow text-stroke-black mb-2" style="-webkit-text-stroke: 1.5px #000;">
-                LABORATÓRIO DE TESTES
-            </h1>
-            <p class="text-white font-marker opacity-80">Use esta ferramenta para popular o banco e testar integrações.</p>
-        </div>
-
-        <!-- PAINEL 1: POPULAR BANCO -->
-        <div class="panel p-6 relative transform -rotate-1">
-            <div class="absolute -top-4 -left-4 bg-doodle-green border-2 border-black px-3 py-1 font-comic text-black shadow-sm">
-                1. TESTAR LISTA DE ALUNOS
-            </div>
-            
-            <p class="text-sm mb-4 mt-2">
-                Isto vai criar 5 alunos falsos diretamente no Firestore para que a lista na página <strong>admin.html</strong> deixe de estar vazia.
-            </p>
-
-            <button id="btn-generate" onclick="generateData()" class="btn-action w-full bg-doodle-purple text-white font-comic text-xl py-3 hover:bg-doodle-pink">
-                GERAR 5 ALUNOS
-            </button>
-
-            <div id="log-generate" class="mt-4 space-y-1 max-h-32 overflow-y-auto bg-gray-100 p-2 border border-gray-300 rounded font-mono text-xs">
-                A aguardar comando...
-            </div>
-        </div>
-
-        <!-- PAINEL 2: TESTAR WEBHOOK -->
-        <div class="panel p-6 relative transform rotate-1">
-            <div class="absolute -top-4 -right-4 bg-doodle-yellow border-2 border-black px-3 py-1 font-comic text-black shadow-sm">
-                2. TESTAR EMAIL AUTOMÁTICO
-            </div>
-
-            <p class="text-sm mb-4 mt-2">
-                Simula uma venda da Cakto. Requer que tenhas feito o <code>firebase deploy</code> e tenhas a URL da função.
-            </p>
-
-            <form onsubmit="testWebhook(event)" class="space-y-3">
-                <div>
-                    <label class="font-bold text-xs">URL DA CLOUD FUNCTION</label>
-                    <input type="url" id="webhook-url" class="w-full border-2 border-black p-2 text-xs" placeholder="https://us-central1-....cloudfunctions.net/handleNewSale" required>
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <div>
-                        <label class="font-bold text-xs">NOME TESTE</label>
-                        <input type="text" id="webhook-name" value="Aluno Teste Webhook" class="w-full border-2 border-black p-2 text-xs" required>
-                    </div>
-                    <div>
-                        <label class="font-bold text-xs">EMAIL TESTE</label>
-                        <input type="email" id="webhook-email" class="w-full border-2 border-black p-2 text-xs" placeholder="teu@email.com" required>
-                    </div>
-                </div>
-                <button type="submit" id="btn-webhook" class="btn-action w-full bg-doodle-green text-black font-comic text-xl py-3 hover:bg-white">
-                    DISPARAR WEBHOOK
-                </button>
-            </form>
-
-            <div id="log-webhook" class="mt-4 bg-gray-100 p-2 border border-gray-300 rounded font-mono text-xs h-20 overflow-y-auto">
-                Logs da resposta aparecerão aqui...
-            </div>
-        </div>
-
-        <!-- Links Úteis -->
-        <div class="col-span-1 md:col-span-2 text-center mt-8">
-            <a href="admin.html" class="inline-block bg-white text-black font-comic text-xl px-6 py-2 border-2 border-black shadow-[4px_4px_0px_#fff] hover:translate-y-1 hover:shadow-none transition-all">
-                VOLTAR AO ADMIN ->
-            </a>
-        </div>
-
-    </div>
-
+    <!-- Configuração do Tailwind -->
     <script>
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: {
-                        comic: ['Bangers', 'cursive'],
-                        marker: ['Permanent Marker', 'cursive'],
-                    },
-                    colors: {
-                        doodle: {
-                            pink: '#FF66C4', green: '#89F279', yellow: '#F2E058', purple: '#6C5DD3'
-                        }
-                    }
+                    fontFamily: { sans: ['Inter', 'sans-serif'], comic: ['Bangers', 'cursive'], marker: ['Permanent Marker', 'cursive'] },
+                    colors: { doodle: { pink: '#FF66C4', green: '#89F279', yellow: '#F2E058', purple: '#6C5DD3', paper: '#F8F9FD', dark: '#2D2B38' } },
+                    boxShadow: { 'hard': '4px 4px 0px 0px #2D2B38', 'hard-sm': '2px 2px 0px 0px #2D2B38' },
+                    animation: { 'spin-slow': 'spin 8s linear infinite', 'wiggle': 'wiggle 3s ease-in-out infinite' },
+                    keyframes: { wiggle: { '0%, 100%': { transform: 'rotate(-3deg)' }, '50%': { transform: 'rotate(3deg)' } } }
                 }
             }
         }
+    </script>
+
+    <!-- Lógica do Sistema (Firebase + App) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInWithCustomToken, sendPasswordResetEmail, setPersistence, browserLocalPersistence, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+        // --- 1. CONFIGURAÇÃO UNIFICADA ---
+        const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
+        const firebaseConfig = {
+          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+          authDomain: "akko-academy.firebaseapp.com",
+          projectId: "akko-academy",
+          storageBucket: "akko-academy.firebasestorage.app",
+          messagingSenderId: "56272587692",
+          appId: REAL_APP_ID
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+        const functions = getFunctions(app);
+        const appId = REAL_APP_ID;
+
+        // Variáveis Globais de Estado
+        let currentUser = null;
+        let globalLessons = [];
+        let currentLessons = []; // Para área de membros
+        let completedLessonIds = new Set();
+        let editingLessonId = null;
+
+        // --- 2. SISTEMA DE NAVEGAÇÃO ---
+        window.switchView = (viewId) => {
+            // Esconde todas as views
+            ['view-login', 'view-admin', 'view-membros', 'view-lab'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            // Mostra a selecionada
+            document.getElementById(viewId).classList.remove('hidden');
+            
+            // Lógica específica ao abrir
+            if(viewId === 'view-admin') initAdminListeners();
+            if(viewId === 'view-membros') {
+                if(!currentUser) { alert("Faça login primeiro!"); switchView('view-login'); return; }
+                initMemberListeners();
+            }
+            
+            // Atualiza botões do menu dev
+            document.querySelectorAll('.dev-btn').forEach(btn => btn.classList.remove('bg-green-500', 'text-black'));
+            document.getElementById(`btn-${viewId}`).classList.add('bg-green-500', 'text-black');
+        }
+
+        // --- 3. AUTENTICAÇÃO GERAL ---
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            const statusDiv = document.getElementById('auth-status');
+            if (user) {
+                statusDiv.innerHTML = `Logado como: <span class="text-green-400">${user.email}</span> (${user.uid.slice(0,5)})`;
+                localStorage.setItem('userLoggedIn', 'true');
+                
+                // Se for admin, libera acesso visual
+                if(user.email === 'admin@akko.com') {
+                    document.getElementById('admin-panel-content').classList.remove('hidden');
+                    document.getElementById('admin-login-overlay').classList.add('hidden');
+                }
+            } else {
+                statusDiv.innerHTML = `Status: <span class="text-red-400">Deslogado</span>`;
+                localStorage.removeItem('userLoggedIn');
+                // Bloqueia admin
+                document.getElementById('admin-panel-content').classList.add('hidden');
+                document.getElementById('admin-login-overlay').classList.remove('hidden');
+            }
+        });
+
+        window.handleLogin = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const pass = document.getElementById('login-pass').value;
+            try {
+                await setPersistence(auth, browserLocalPersistence);
+                await signInWithEmailAndPassword(auth, email, pass);
+                alert("Login realizado!");
+                // Se for admin, vai pro admin, senão membros
+                if(email === 'admin@akko.com') switchView('view-admin');
+                else switchView('view-membros');
+            } catch (err) { alert("Erro: " + err.message); }
+        };
+
+        window.handleLogout = async () => {
+            await signOut(auth);
+            switchView('view-login');
+        };
+
+        // --- 4. LÓGICA: PAINEL ADMIN ---
+        function initAdminListeners() {
+            const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
+            onSnapshot(q, (snap) => {
+                globalLessons = [];
+                snap.forEach(d => globalLessons.push({id: d.id, ...d.data()}));
+                globalLessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+                renderAdminTable();
+            });
+            
+            const qS = query(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
+            onSnapshot(qS, (snap) => {
+                const students = [];
+                snap.forEach(d => students.push({id: d.id, ...d.data()}));
+                document.getElementById('count-students').innerText = students.length;
+                renderStudentTable(students);
+            });
+        }
+
+        window.renderAdminTable = () => {
+            const tbody = document.getElementById('admin-lessons-body');
+            tbody.innerHTML = '';
+            document.getElementById('count-lessons').innerText = globalLessons.length;
+            
+            globalLessons.forEach(l => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b border-gray-200 text-sm";
+                tr.innerHTML = `
+                    <td class="p-2 font-bold text-doodle-purple">${l.moduleName}</td>
+                    <td class="p-2">${l.title}</td>
+                    <td class="p-2 text-right">
+                        <button onclick="deleteDocById('lessons', '${l.id}')" class="text-red-500 hover:text-red-700">Excluir</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        window.renderStudentTable = (students) => {
+            const tbody = document.getElementById('admin-students-body');
+            tbody.innerHTML = '';
+            students.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td class="p-2">${s.name}</td><td class="p-2 text-gray-500">${s.email}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        window.createLesson = async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            btn.disabled = true; btn.innerText = "...";
+            
+            try {
+                const title = document.getElementById('adm-title').value;
+                const module = document.getElementById('adm-module').value;
+                const url = document.getElementById('adm-url').value;
+                const desc = document.getElementById('adm-desc').value;
+                
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'), {
+                    title, moduleName: module, videoUrl: url, description: desc, professor: "Admin", createdAt: serverTimestamp()
+                });
+                e.target.reset();
+                alert("Aula criada!");
+            } catch(err) { alert(err.message); }
+            finally { btn.disabled = false; btn.innerText = "SALVAR AULA"; }
+        }
+
+        window.deleteDocById = async (col, id) => {
+            if(confirm("Deletar mesmo?")) {
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id));
+            }
+        }
+
+        // --- 5. LÓGICA: ÁREA DE MEMBROS ---
+        function initMemberListeners() {
+            // Reutiliza a query de lessons mas atualiza a UI de membros
+            const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
+            onSnapshot(q, (snap) => {
+                currentLessons = [];
+                snap.forEach(d => currentLessons.push({id: d.id, ...d.data()}));
+                currentLessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+                renderMemberSidebar();
+            });
+
+            if(currentUser) {
+                const pRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'progress');
+                onSnapshot(pRef, (snap) => {
+                    completedLessonIds.clear();
+                    snap.forEach(d => completedLessonIds.add(d.id));
+                    renderMemberSidebar(); // Re-render para atualizar checks
+                    updateProgressUI();
+                });
+            }
+        }
+
+        window.renderMemberSidebar = () => {
+            const container = document.getElementById('member-sidebar');
+            container.innerHTML = '';
+            
+            const modules = {};
+            currentLessons.forEach((l, i) => {
+                if(!modules[l.moduleName]) modules[l.moduleName] = [];
+                modules[l.moduleName].push({...l, idx: i});
+            });
+
+            Object.keys(modules).forEach(mod => {
+                const det = document.createElement('details');
+                det.className = "mb-2 group";
+                det.open = true;
+                det.innerHTML = `
+                    <summary class="font-comic text-xl p-2 bg-doodle-yellow border-2 border-doodle-dark cursor-pointer list-none flex justify-between">
+                        <span>${mod}</span> <span class="transform group-open:rotate-180">▼</span>
+                    </summary>
+                    <div class="bg-white border-2 border-t-0 border-doodle-dark p-2 space-y-2">
+                        ${modules[mod].map(l => `
+                            <button onclick="playLesson(${l.idx})" class="w-full text-left p-2 hover:bg-gray-100 flex items-center gap-2 text-sm">
+                                <div class="w-4 h-4 border border-black ${completedLessonIds.has(l.id) ? 'bg-doodle-green' : 'bg-white'}"></div>
+                                ${l.title}
+                            </button>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(det);
+            });
+        }
+
+        window.playLesson = (idx) => {
+            const l = currentLessons[idx];
+            if(!l) return;
+            
+            document.getElementById('player-area').innerHTML = `
+                <h2 class="font-comic text-4xl mb-2">${l.title}</h2>
+                <div class="aspect-video bg-black border-4 border-doodle-dark shadow-hard relative">
+                    <iframe src="${getEmbedUrl(l.videoUrl)}" class="w-full h-full" frameborder="0" allowfullscreen></iframe>
+                </div>
+                <div class="mt-4 p-4 bg-white border-2 border-doodle-dark">
+                    <h3 class="font-bold">Descrição:</h3>
+                    <p>${l.description || 'Sem descrição.'}</p>
+                    <button onclick="toggleComplete('${l.id}', '${l.title}')" class="mt-4 bg-doodle-green px-4 py-2 border-2 border-doodle-dark shadow-hard-sm hover:translate-y-1 transition-transform">
+                        MARCAR COMO VISTO
+                    </button>
+                </div>
+            `;
+        }
+
+        window.toggleComplete = async (lid, title) => {
+            if(!currentUser) return;
+            const ref = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'progress', lid);
+            if(completedLessonIds.has(lid)) await deleteDoc(ref);
+            else await setDoc(ref, { title, at: serverTimestamp() });
+        }
+
+        function getEmbedUrl(url) {
+            if(!url) return '';
+            const ytRegex = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(ytRegex);
+            return (match && match[2].length === 11) ? `https://www.youtube.com/embed/${match[2]}` : url;
+        }
+
+        function updateProgressUI() {
+            const total = currentLessons.length;
+            const done = completedLessonIds.size;
+            const pct = total === 0 ? 0 : Math.round((done/total)*100);
+            document.getElementById('prog-bar').style.width = `${pct}%`;
+            document.getElementById('prog-text').innerText = `${pct}%`;
+        }
+
+        // --- 6. LÓGICA: LAB DE TESTES ---
+        window.generateTestUsers = async () => {
+            const log = document.getElementById('lab-log');
+            log.innerHTML = "Gerando...";
+            try {
+                for(let i=0; i<3; i++) {
+                    const name = `Aluno Teste ${Math.floor(Math.random()*1000)}`;
+                    const email = `teste.${Date.now()}@exemplo.com`;
+                    // Cria direto no Firestore (simula webhook)
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
+                        name, email, uid: `mock_${Date.now()}`, createdAt: serverTimestamp()
+                    });
+                    log.innerHTML += `<br>Criado: ${name}`;
+                }
+                log.innerHTML += "<br><b>Concluído! Veja no Admin.</b>";
+            } catch(e) { log.innerText = "Erro: " + e.message; }
+        }
+
+        // Init Icons
         lucide.createIcons();
     </script>
+
+    <style>
+        .custom-scroll::-webkit-scrollbar { width: 8px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #2D2B38; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #F2E058; }
+        body { overflow: hidden; } /* O scroll é interno nas views */
+    </style>
+</head>
+<body class="bg-gray-800 text-doodle-dark h-screen flex flex-col font-sans">
+
+    <!-- BARRA DE DESENVOLVEDOR (SUPERIOR) -->
+    <div class="h-14 bg-black text-white flex items-center justify-between px-4 z-50 shrink-0 border-b-4 border-doodle-green">
+        <div class="flex items-center gap-4">
+            <span class="font-comic text-xl text-doodle-green">🛠️ DEV TOOLKIT</span>
+            <div id="auth-status" class="text-xs font-mono text-gray-400 ml-4">Carregando Auth...</div>
+        </div>
+        <div class="flex gap-2">
+            <button id="btn-view-login" onclick="switchView('view-login')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors bg-green-500 text-black font-bold">1. LOGIN</button>
+            <button id="btn-view-admin" onclick="switchView('view-admin')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors">2. ADMIN</button>
+            <button id="btn-view-membros" onclick="switchView('view-membros')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors">3. MEMBROS</button>
+            <button id="btn-view-lab" onclick="switchView('view-lab')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors">4. LAB</button>
+            <button onclick="handleLogout()" class="ml-4 px-3 py-1 text-xs bg-red-600 hover:bg-red-700 rounded font-bold">SAIR</button>
+        </div>
+    </div>
+
+    <!-- CONTAINER PRINCIPAL -->
+    <div class="flex-1 relative bg-doodle-paper overflow-hidden">
+
+        <!-- === VIEW 1: LOGIN === -->
+        <div id="view-login" class="absolute inset-0 flex items-center justify-center bg-[url('https://www.transparenttextures.com/patterns/graphy.png')]">
+            <div class="bg-white p-8 border-4 border-doodle-dark shadow-hard max-w-sm w-full transform -rotate-1">
+                <h1 class="font-comic text-5xl text-center mb-6 text-doodle-purple">AKKO LOGIN</h1>
+                <form onsubmit="handleLogin(event)" class="space-y-4">
+                    <input type="email" id="login-email" class="w-full border-2 border-doodle-dark p-2" placeholder="Email (admin@akko.com)" required>
+                    <input type="password" id="login-pass" class="w-full border-2 border-doodle-dark p-2" placeholder="Senha" required>
+                    <button type="submit" class="w-full bg-doodle-pink text-white font-comic text-2xl py-2 border-2 border-doodle-dark shadow-sm hover:translate-y-1 transition-transform">ENTRAR</button>
+                </form>
+                <div class="mt-4 text-xs text-center text-gray-500">
+                    Dica: Use <b>admin@akko.com</b> para testar o Admin.
+                </div>
+            </div>
+        </div>
+
+        <!-- === VIEW 2: ADMIN === -->
+        <div id="view-admin" class="hidden absolute inset-0 flex flex-col bg-gray-100">
+            <!-- Bloqueio se não for admin -->
+            <div id="admin-login-overlay" class="absolute inset-0 z-10 bg-black/80 flex items-center justify-center text-white font-comic text-3xl">
+                🔒 ACESSO RESTRITO A ADMINS
+            </div>
+
+            <div id="admin-panel-content" class="flex h-full">
+                <!-- Sidebar Admin -->
+                <div class="w-64 bg-white border-r-4 border-doodle-dark p-4 flex flex-col gap-4">
+                    <div class="bg-doodle-yellow p-4 border-2 border-doodle-dark text-center font-comic text-2xl shadow-sm">
+                        PAINEL ADMIN
+                    </div>
+                    
+                    <!-- Stats Rápidos -->
+                    <div class="grid grid-cols-2 gap-2 text-center text-xs font-mono">
+                        <div class="bg-blue-100 p-2 border border-blue-300 rounded">
+                            Aulas: <b id="count-lessons">0</b>
+                        </div>
+                        <div class="bg-green-100 p-2 border border-green-300 rounded">
+                            Alunos: <b id="count-students">0</b>
+                        </div>
+                    </div>
+
+                    <!-- Criar Aula -->
+                    <div class="border-t-2 border-dashed border-gray-300 pt-4">
+                        <h3 class="font-bold mb-2 text-sm">NOVA AULA</h3>
+                        <form onsubmit="createLesson(event)" class="space-y-2">
+                            <input id="adm-module" class="w-full text-xs p-1 border border-gray-400" placeholder="Módulo (ex: Módulo 1)" required>
+                            <input id="adm-title" class="w-full text-xs p-1 border border-gray-400" placeholder="Título da Aula" required>
+                            <input id="adm-url" class="w-full text-xs p-1 border border-gray-400" placeholder="Link YouTube" required>
+                            <textarea id="adm-desc" class="w-full text-xs p-1 border border-gray-400" placeholder="Descrição"></textarea>
+                            <button type="submit" class="w-full bg-doodle-green text-xs font-bold py-2 border border-black shadow-sm hover:bg-white">SALVAR AULA</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Lista de Conteúdo -->
+                <div class="flex-1 p-8 overflow-y-auto custom-scroll">
+                    <div class="grid grid-cols-2 gap-8">
+                        <!-- Lista Aulas -->
+                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-4">
+                            <h2 class="font-comic text-2xl mb-4 border-b-2 border-black pb-1">LISTA DE AULAS</h2>
+                            <table class="w-full text-left">
+                                <thead><tr class="bg-gray-100 text-xs"><th class="p-2">MÓDULO</th><th class="p-2">TÍTULO</th><th class="p-2 text-right">AÇÃO</th></tr></thead>
+                                <tbody id="admin-lessons-body"></tbody>
+                            </table>
+                        </div>
+                        <!-- Lista Alunos -->
+                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-4">
+                            <h2 class="font-comic text-2xl mb-4 border-b-2 border-black pb-1">LISTA DE ALUNOS</h2>
+                            <table class="w-full text-left">
+                                <tbody id="admin-students-body" class="text-sm"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- === VIEW 3: MEMBROS === -->
+        <div id="view-membros" class="hidden absolute inset-0 flex flex-col">
+            <!-- Header Membros -->
+            <div class="h-16 bg-white border-b-4 border-doodle-dark flex items-center justify-between px-6">
+                <span class="font-comic text-2xl text-doodle-purple">🎓 ÁREA DO ALUNO</span>
+                <div class="w-48">
+                    <div class="flex justify-between text-xs font-bold mb-1"><span>PROGRESSO</span><span id="prog-text">0%</span></div>
+                    <div class="w-full bg-gray-200 h-2 border border-black rounded-full overflow-hidden">
+                        <div id="prog-bar" class="h-full bg-doodle-green w-0 transition-all duration-500"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Sidebar Aulas -->
+                <div class="w-80 bg-gray-50 border-r-4 border-doodle-dark overflow-y-auto custom-scroll p-4" id="member-sidebar">
+                    <!-- Inserido via JS -->
+                </div>
+
+                <!-- Player -->
+                <div class="flex-1 bg-doodle-paper p-8 overflow-y-auto custom-scroll" id="player-area">
+                    <div class="flex flex-col items-center justify-center h-full opacity-50">
+                        <i data-lucide="play-circle" class="w-24 h-24 mb-4"></i>
+                        <h2 class="font-comic text-3xl">SELECIONE UMA AULA PARA COMEÇAR</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- === VIEW 4: LAB TESTES === -->
+        <div id="view-lab" class="hidden absolute inset-0 flex items-center justify-center bg-[#2D2B38]">
+            <div class="max-w-2xl w-full grid grid-cols-2 gap-8">
+                <div class="col-span-2 text-center text-white mb-4">
+                    <h1 class="font-comic text-5xl text-doodle-yellow">LABORATÓRIO</h1>
+                    <p class="font-marker opacity-70">Use para popular o banco de dados sem esforço.</p>
+                </div>
+
+                <div class="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_#F2E058] transform -rotate-1">
+                    <h3 class="font-bold text-xl mb-2">GERADOR DE DADOS</h3>
+                    <p class="text-sm mb-4">Cria 3 alunos fictícios e salva no Firestore instantaneamente.</p>
+                    <button onclick="generateTestUsers()" class="w-full bg-doodle-purple text-white font-comic text-xl py-2 border-2 border-black hover:bg-doodle-pink">GERAR 3 ALUNOS</button>
+                    <div id="lab-log" class="mt-2 text-xs h-24 overflow-y-auto bg-gray-100 p-2 border border-gray-300">Aguardando...</div>
+                </div>
+
+                <div class="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_#89F279] transform rotate-1">
+                    <h3 class="font-bold text-xl mb-2">INFO DO SISTEMA</h3>
+                    <ul class="text-sm space-y-2">
+                        <li><b>App ID:</b> <span class="font-mono bg-gray-200 px-1">1:56272587692...</span></li>
+                        <li><b>Firestore:</b> Conectado</li>
+                        <li><b>Auth:</b> Ativo</li>
+                    </ul>
+                    <div class="mt-4 p-2 bg-yellow-100 border border-yellow-400 text-xs text-yellow-800">
+                        Este painel simula todas as funções sem precisar de deploy.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
 </body>
 </html>
