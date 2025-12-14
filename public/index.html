@@ -11,8 +11,6 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // IMPORTANTE: Adicionei getFunctions e httpsCallable
-        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
@@ -23,15 +21,15 @@
           appId: "1:56272587692:web:6e62374b91269073784809"
         };
 
-        const firebaseConfig = manualConfig.apiKey 
+        // Passa a config para a URL da página de recuperação
+        window.firebaseConfigObj = manualConfig.apiKey 
             ? manualConfig 
             : (typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}'));
 
-        const app = initializeApp(firebaseConfig);
+        const app = initializeApp(window.firebaseConfigObj);
         const auth = getAuth(app);
-        const functions = getFunctions(app); // Inicializa Functions no Front
 
-        // --- SISTEMA DE ALERTAS PERSONALIZADOS ---
+        // --- SISTEMA DE ALERTAS ---
         window.showAlert = (title, msg, type = 'info') => {
             const modal = document.getElementById('custom-alert');
             const titleEl = document.getElementById('alert-title');
@@ -40,26 +38,22 @@
             const bgEl = document.getElementById('alert-box');
 
             titleEl.innerText = title;
-            msgEl.innerHTML = msg; 
+            msgEl.innerHTML = msg;
             
-            // Reset classes
-            bgEl.className = "bg-white border-4 border-doodle-dark p-6 max-w-sm w-full transform relative transition-all";
-            
+            // Reseta classes
+            bgEl.className = "bg-white border-4 border-doodle-dark p-6 max-w-sm w-full relative transform transition-all shadow-[8px_8px_0px_#2D2B38]";
+            titleEl.className = "font-comic text-3xl mb-2";
+
             if (type === 'error') {
-                titleEl.className = "font-comic text-4xl mb-2 text-red-600";
-                bgEl.classList.add("shadow-[10px_10px_0px_#EF4444]", "-rotate-1");
+                titleEl.classList.add('text-red-600');
+                bgEl.classList.add('-rotate-1');
                 iconEl.setAttribute('data-lucide', 'alert-triangle');
-                iconEl.className = "w-10 h-10 text-red-600 absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-12";
-            } else if (type === 'success') {
-                titleEl.className = "font-comic text-4xl mb-2 text-doodle-green";
-                bgEl.classList.add("shadow-[10px_10px_0px_#89F279]", "rotate-1");
-                iconEl.setAttribute('data-lucide', 'check-circle-2');
-                iconEl.className = "w-10 h-10 text-doodle-green absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform rotate-12";
+                iconEl.className = "w-12 h-12 text-red-600 absolute -top-6 -left-6 bg-white border-4 border-doodle-dark rounded-full p-1 transform -rotate-12";
             } else {
-                titleEl.className = "font-comic text-4xl mb-2 text-doodle-dark";
-                bgEl.classList.add("shadow-[10px_10px_0px_#2D2B38]", "rotate-1");
+                titleEl.classList.add('text-doodle-purple');
+                bgEl.classList.add('rotate-1');
                 iconEl.setAttribute('data-lucide', 'info');
-                iconEl.className = "w-10 h-10 text-doodle-purple absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-6";
+                iconEl.className = "w-12 h-12 text-doodle-purple absolute -top-6 -left-6 bg-white border-4 border-doodle-dark rounded-full p-1 transform -rotate-6";
             }
 
             lucide.createIcons();
@@ -72,9 +66,9 @@
             document.getElementById('custom-alert').classList.remove('flex');
         }
 
-        // --- LÓGICA DE LOGIN ---
+        // --- LOGIN ---
         window.handleLogin = async (e) => {
-            e.preventDefault(); // Impede recarregar a página
+            e.preventDefault();
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const btn = document.getElementById('btn-login-submit');
@@ -86,6 +80,7 @@
                     await setPersistence(auth, browserLocalPersistence);
                     await signInWithEmailAndPassword(auth, email, password);
                     localStorage.setItem('userLoggedIn', 'true');
+                    localStorage.setItem('userName', email);
                     window.location.href = 'membros.html'; 
                 } catch (error) {
                     console.error(error);
@@ -103,53 +98,19 @@
             }
         }
 
-        // --- LÓGICA DE RECUPERAÇÃO (MODIFICADA PARA USAR CLOUD FUNCTION) ---
-        window.handleRecovery = async (e) => {
-            e.preventDefault(); // CRUCIAL: Impede o refresh
-            const email = document.getElementById('recovery-email').value;
-            const btn = document.getElementById('btn-recovery-submit');
-
-            if (!email) {
-                window.showAlert("EMAIL NECESSÁRIO", "Digite o email da sua conta para recuperarmos.", 'error');
-                return;
-            }
-
-            btn.innerText = "ENVIANDO...";
-            btn.disabled = true;
-
-            try {
-                // Chama a função estilosa do Backend
-                const sendFunc = httpsCallable(functions, 'sendCustomRecoveryEmail');
-                await sendFunc({ email: email });
-
-                window.showAlert("EMAIL ENVIADO!", `Enviamos um link estiloso para <b>${email}</b>.<br>Verifique a caixa de entrada e SPAM.`, 'success');
-                
-                // Volta para a tela de login após 3 segundos
-                setTimeout(() => {
-                    switchView('login');
-                    document.getElementById('recovery-email').value = "";
-                }, 3000);
-
-            } catch (error) {
-                console.error(error);
-                let msg = error.message;
-                if (msg.includes('not-found') || error.code === 'not-found') msg = "Este email não é aluno da Akko.";
-                window.showAlert("ERRO", msg, 'error');
-            } finally {
-                btn.innerText = "ENVIAR LINK DE RECUPERAÇÃO";
-                btn.disabled = false;
-            }
+        window.openRecoveryPage = () => {
+            // Passa a config via URL para a página de recuperação funcionar sem setup extra
+            const configStr = encodeURIComponent(JSON.stringify(window.firebaseConfigObj));
+            window.open(`recuperar.html?firebase_config=${configStr}`, '_blank');
         }
 
         window.buyLink = "https://pay.cakto.com.br/97fsdky_686786"; 
         window.goToCheckout = () => window.open(window.buyLink, '_blank');
 
-        // Animação de Scroll (Reveal)
+        // Reveal Animation
         document.addEventListener('DOMContentLoaded', () => {
             const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if(entry.isIntersecting) { entry.target.classList.add('active'); }
-                });
+                entries.forEach(entry => { if(entry.isIntersecting) entry.target.classList.add('active'); });
             }, { threshold: 0.1 });
             document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
         });
@@ -204,19 +165,15 @@
         .modal.active { opacity: 1; visibility: visible; pointer-events: auto; }
         .modal-content { transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
         .modal.active .modal-content { transform: scale(1) rotate(2deg); }
-        
-        /* View Transition */
-        .auth-view { transition: all 0.3s ease; }
-        .auth-view.hidden { display: none; opacity: 0; transform: translateX(20px); }
     </style>
 </head>
 <body class="font-sans antialiased selection:bg-doodle-pink selection:text-white">
 
     <!-- CUSTOM ALERT POPUP -->
     <div id="custom-alert" class="fixed inset-0 z-[200] hidden items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity">
-        <div id="alert-box" class="bg-white border-4 border-doodle-dark shadow-[10px_10px_0px_#2D2B38] p-6 max-w-sm w-full transform rotate-1 relative transition-all">
-            <i id="alert-icon" data-lucide="info" class="w-10 h-10 text-doodle-purple absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-6"></i>
-            <h3 id="alert-title" class="font-comic text-3xl mb-2 text-doodle-dark">TÍTULO</h3>
+        <div id="alert-box" class="bg-white border-4 border-doodle-dark p-6 max-w-sm w-full relative transform transition-all shadow-[8px_8px_0px_#2D2B38]">
+            <i id="alert-icon"></i>
+            <h3 id="alert-title" class="font-comic text-3xl mb-2">TÍTULO</h3>
             <p id="alert-msg" class="font-marker text-lg text-gray-600 mb-6 leading-snug">Mensagem aqui.</p>
             <button onclick="closeAlert()" class="w-full bg-doodle-yellow font-comic text-2xl py-2 border-2 border-doodle-dark shadow-sm hover:translate-y-1 hover:shadow-none transition-all rounded-lg">ENTENDIDO</button>
         </div>
@@ -311,50 +268,6 @@
         </div>
     </section>
 
-    <!-- SCROLLING BANNER -->
-    <div class="bg-doodle-yellow border-y-4 border-doodle-dark py-4 transform -rotate-1 scale-[1.02] shadow-md relative z-20 overflow-hidden flex">
-        <div class="flex gap-12 animate-scroll-text whitespace-nowrap font-comic text-4xl text-doodle-dark items-center flex-shrink-0 min-w-full px-8">
-            <span>⚡ AFTER EFFECTS</span><span>★ AFTER EFFECTS</span><span>⚡ AFTER EFFECTS</span><span>★ AFTER EFFECTS</span><span>⚡ AFTER EFFECTS</span>
-        </div>
-        <div class="flex gap-12 animate-scroll-text whitespace-nowrap font-comic text-4xl text-doodle-dark items-center flex-shrink-0 min-w-full px-8" aria-hidden="true">
-            <span>⚡ AFTER EFFECTS</span><span>★ AFTER EFFECTS</span><span>⚡ AFTER EFFECTS</span><span>★ AFTER EFFECTS</span><span>⚡ AFTER EFFECTS</span>
-        </div>
-    </div>
-
-    <!-- MENTOR SECTION (Placeholder structure for brevity) -->
-    <section id="mentor" class="py-24 bg-doodle-purple relative border-t-4 border-doodle-dark overflow-hidden">
-        <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#fff 2px, transparent 2px); background-size: 20px 20px;"></div>
-        <div class="max-w-6xl mx-auto px-4 relative z-10">
-            <h2 class="font-comic text-7xl text-white text-center mb-20 text-shadow-hard transform -rotate-2 reveal">A EQUIPE <span class="text-doodle-yellow">BRABA</span></h2>
-            <div class="grid md:grid-cols-3 gap-10 px-4">
-                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform rotate-2 relative group hover:-translate-y-4 hover:rotate-0 transition-all duration-300 reveal delay-100">
-                    <div class="tape tape-tc"></div>
-                    <div class="aspect-square bg-gray-200 mb-6 border-2 border-doodle-dark overflow-hidden relative group-hover:shadow-inner">
-                        <img src="https://ui-avatars.com/api/?name=Payliny&background=6C5DD3&color=fff&size=512&font-size=0.33" class="w-full h-full object-cover">
-                    </div>
-                    <h3 class="font-comic text-4xl text-doodle-dark mb-1">Payliny</h3>
-                    <p class="font-marker text-xl text-doodle-purple">Camera & Direção</p>
-                </div>
-                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform -rotate-1 relative group hover:-translate-y-4 hover:rotate-0 transition-all duration-300 z-10 reveal delay-200">
-                    <div class="tape tape-tr bg-doodle-pink"></div>
-                    <div class="aspect-square bg-gray-200 mb-6 border-2 border-doodle-dark overflow-hidden">
-                         <img src="https://ui-avatars.com/api/?name=Scroll&background=FF66C4&color=fff&size=512&font-size=0.33" class="w-full h-full object-cover">
-                    </div>
-                    <h3 class="font-comic text-4xl text-doodle-dark mb-1">Scroll</h3>
-                    <p class="font-marker text-xl text-doodle-pink">Composição VFX</p>
-                </div>
-                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform rotate-3 relative group hover:-translate-y-4 hover:rotate-0 transition-all duration-300 reveal delay-300">
-                    <div class="tape tape-tl bg-doodle-green"></div>
-                    <div class="aspect-square bg-gray-200 mb-6 border-2 border-doodle-dark overflow-hidden">
-                         <img src="https://ui-avatars.com/api/?name=Sender&background=89F279&color=2D2B38&size=512&font-size=0.33" class="w-full h-full object-cover">
-                    </div>
-                    <h3 class="font-comic text-4xl text-doodle-dark mb-1">Sender</h3>
-                    <p class="font-marker text-xl text-doodle-green">Color Grading</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
     <!-- FOOTER -->
     <footer class="bg-doodle-dark text-white py-16 border-t-4 border-doodle-pink relative overflow-hidden">
         <div class="max-w-6xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-8 relative z-10">
@@ -365,7 +278,7 @@
         </div>
     </footer>
 
-    <!-- LOGIN MODAL (AGORA COM VIEW DUPLA) -->
+    <!-- LOGIN MODAL -->
     <div id="login-modal" class="fixed inset-0 z-[100] modal flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-doodle-dark/80 backdrop-blur-sm" onclick="toggleLoginModal()"></div>
         
@@ -373,8 +286,7 @@
             <div class="tape tape-tc opacity-50 bg-white/50"></div>
             <button onclick="toggleLoginModal()" class="absolute top-2 right-2 text-doodle-dark hover:scale-110 transition-transform font-bold font-comic text-xl w-8 h-8 flex items-center justify-center border-2 border-transparent hover:border-doodle-dark rounded-full z-10">X</button>
             
-            <!-- VIEW 1: LOGIN -->
-            <div id="login-view" class="auth-view">
+            <div id="login-view">
                 <div class="text-center mb-8">
                     <h2 class="font-comic text-5xl text-doodle-dark mb-2">ÁREA DOS MEMBROS</h2>
                     <p class="font-marker text-doodle-dark/70 text-sm leading-tight px-4">Utilize o email e a senha enviados para a sua caixa de entrada.</p>
@@ -388,7 +300,8 @@
                         <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">SENHA</label>
                         <input type="password" id="password" class="w-full bg-white border-2 border-doodle-dark p-3 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow rounded-lg text-lg" required>
                         <div class="text-right mt-1">
-                            <button type="button" onclick="switchView('recover')" class="text-xs font-bold text-doodle-purple hover:underline decoration-wavy">ESQUECI A SENHA</button>
+                            <!-- BOTÃO ATUALIZADO: Abre nova aba -->
+                            <button type="button" onclick="openRecoveryPage()" class="text-xs font-bold text-doodle-purple hover:underline decoration-wavy">ESQUECI A SENHA</button>
                         </div>
                     </div>
                     <button type="submit" id="btn-login-submit" class="btn-doodle w-full bg-doodle-pink text-white font-comic text-3xl py-3 mt-4 border-2 border-doodle-dark hover:bg-doodle-purple rounded-lg shadow-hard-sm">
@@ -399,58 +312,14 @@
                     <p class="font-sans text-xs text-doodle-dark font-bold">Ainda não recebeu? Verifique o SPAM.</p>
                 </div>
             </div>
-
-            <!-- VIEW 2: RECOVER -->
-            <div id="recover-view" class="auth-view hidden">
-                <div class="text-center mb-8">
-                    <h2 class="font-comic text-4xl text-doodle-dark mb-2 text-doodle-purple">RECUPERAR SENHA</h2>
-                    <p class="font-marker text-doodle-dark/70 text-sm leading-tight px-4">Digite o email da sua compra para receber um link de redefinição.</p>
-                </div>
-                <form onsubmit="handleRecovery(event)" class="space-y-6">
-                    <div>
-                        <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">SEU EMAIL</label>
-                        <input type="email" id="recovery-email" class="w-full bg-white border-2 border-doodle-dark p-3 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow rounded-lg text-lg" placeholder="exemplo@email.com">
-                    </div>
-                    
-                    <button type="submit" id="btn-recovery-submit" class="btn-doodle w-full bg-doodle-purple text-white font-comic text-2xl py-3 border-2 border-doodle-dark hover:bg-doodle-pink rounded-lg shadow-hard-sm">
-                        ENVIAR LINK
-                    </button>
-                </form>
-                <div class="text-center mt-6">
-                    <button onclick="switchView('login')" class="font-marker text-sm text-doodle-dark hover:text-doodle-pink underline decoration-2">
-                        &larr; Voltar para Login
-                    </button>
-                </div>
-            </div>
-
         </div>
     </div>
 
     <script>
         lucide.createIcons();
-        
         function toggleLoginModal() {
             const modal = document.getElementById('login-modal');
             modal.classList.toggle('active');
-            // Reseta para a view de login ao fechar/abrir
-            if(modal.classList.contains('active')) {
-                switchView('login');
-                document.getElementById('email').value = '';
-                document.getElementById('password').value = '';
-            }
-        }
-
-        function switchView(view) {
-            const loginView = document.getElementById('login-view');
-            const recoverView = document.getElementById('recover-view');
-            
-            if(view === 'recover') {
-                loginView.classList.add('hidden');
-                recoverView.classList.remove('hidden');
-            } else {
-                recoverView.classList.add('hidden');
-                loginView.classList.remove('hidden');
-            }
         }
     </script>
 </body>

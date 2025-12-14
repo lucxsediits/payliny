@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recuperar Senha - Akko Academy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'], comic: ['Bangers', 'cursive'], marker: ['Permanent Marker', 'cursive'] },
+                    colors: { doodle: { pink: '#FF66C4', green: '#89F279', yellow: '#F2E058', purple: '#6C5DD3', paper: '#F8F9FD', dark: '#2D2B38' } },
+                    boxShadow: { 'hard': '4px 4px 0px 0px #2D2B38' }
+                }
+            }
+        }
+    </script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+
+        // CONFIGURAÇÃO
+        const firebaseConfig = JSON.parse(new URLSearchParams(window.location.search).get('firebase_config') || '{}');
+        // Fallback manual se não vier da URL (Copie sua config aqui se precisar rodar direto)
+        const manualConfig = {
+          apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
+          authDomain: "akko-academy.firebaseapp.com",
+          projectId: "akko-academy",
+          storageBucket: "akko-academy.firebasestorage.app",
+          messagingSenderId: "56272587692",
+          appId: "1:56272587692:web:6e62374b91269073784809"
+        };
+        
+        const app = initializeApp(Object.keys(firebaseConfig).length ? firebaseConfig : manualConfig);
+        const auth = getAuth(app);
+        const functions = getFunctions(app);
+
+        // --- SISTEMA DE ALERTAS (Mesmo estilo) ---
+        window.showAlert = (title, msg, type = 'info') => {
+            const modal = document.getElementById('custom-alert');
+            const titleEl = document.getElementById('alert-title');
+            const msgEl = document.getElementById('alert-msg');
+            const bgEl = document.getElementById('alert-box');
+            const iconEl = document.getElementById('alert-icon');
+
+            titleEl.innerText = title;
+            msgEl.innerHTML = msg;
+            
+            // Limpa classes de cor
+            titleEl.className = "font-comic text-3xl mb-2";
+            bgEl.className = "bg-white border-4 border-doodle-dark p-6 max-w-sm w-full relative transform transition-all shadow-[8px_8px_0px_#2D2B38]";
+
+            if(type === 'success') {
+                titleEl.classList.add('text-doodle-green');
+                bgEl.style.borderColor = '#2D2B38';
+                iconEl.setAttribute('data-lucide', 'check-circle');
+                iconEl.className = "w-12 h-12 text-doodle-green absolute -top-6 -left-6 bg-white border-4 border-doodle-dark rounded-full p-1 transform -rotate-12";
+            } else if (type === 'error') {
+                titleEl.classList.add('text-red-600');
+                iconEl.setAttribute('data-lucide', 'alert-triangle');
+                iconEl.className = "w-12 h-12 text-red-600 absolute -top-6 -left-6 bg-white border-4 border-doodle-dark rounded-full p-1 transform rotate-12";
+            } else {
+                titleEl.classList.add('text-doodle-purple');
+                iconEl.setAttribute('data-lucide', 'info');
+                iconEl.className = "w-12 h-12 text-doodle-purple absolute -top-6 -left-6 bg-white border-4 border-doodle-dark rounded-full p-1 transform -rotate-6";
+            }
+
+            lucide.createIcons();
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        window.closeAlert = () => {
+            document.getElementById('custom-alert').classList.add('hidden');
+            document.getElementById('custom-alert').classList.remove('flex');
+        }
+
+        // --- LÓGICA DE ENVIO ---
+        window.handleRecovery = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const btn = document.getElementById('btn-submit');
+
+            if(!email) {
+                window.showAlert("ERRO", "Digite seu email primeiro.", "error");
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "ENVIANDO...";
+
+            try {
+                // Tenta usar a Cloud Function estilosa primeiro
+                const sendFunc = httpsCallable(functions, 'sendCustomRecoveryEmail');
+                await sendFunc({ email: email });
+                
+                window.showAlert("SUCESSO!", `Enviamos o link de redefinição para:<br><b>${email}</b><br><br>Verifique o SPAM.`, "success");
+                document.getElementById('recovery-form').reset();
+            } catch (error) {
+                console.error(error);
+                // Fallback para o método padrão se a função falhar
+                try {
+                    await sendPasswordResetEmail(auth, email);
+                    window.showAlert("ENVIADO", `Link enviado para <b>${email}</b>.`, "success");
+                } catch(err2) {
+                    let msg = "Erro ao enviar.";
+                    if(err2.code === 'auth/user-not-found') msg = "Este email não é aluno.";
+                    window.showAlert("OPS!", msg, "error");
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "ENVIAR LINK DE RECUPERAÇÃO";
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color: #2D2B38; background-image: radial-gradient(#3E3B4B 2px, transparent 2px); background-size: 20px 20px; }
+    </style>
+</head>
+<body class="h-screen flex items-center justify-center p-4">
+
+    <!-- ALERT POPUP -->
+    <div id="custom-alert" class="fixed inset-0 z-[999] hidden items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div id="alert-box" class="bg-white border-4 border-doodle-dark p-6 max-w-sm w-full relative transform rotate-1 shadow-[8px_8px_0px_#2D2B38]">
+            <i id="alert-icon"></i>
+            <h3 id="alert-title" class="font-comic text-3xl mb-2">TÍTULO</h3>
+            <p id="alert-msg" class="font-marker text-lg text-gray-600 mb-6 leading-snug">Mensagem.</p>
+            <button onclick="closeAlert()" class="w-full bg-doodle-yellow font-comic text-2xl py-2 border-2 border-doodle-dark shadow-hard active:translate-y-1 active:shadow-none transition-all">OK</button>
+        </div>
+    </div>
+
+    <!-- MAIN CARD -->
+    <div class="bg-doodle-paper border-4 border-doodle-dark shadow-[15px_15px_0px_#F2E058] max-w-md w-full p-8 relative transform -rotate-1">
+        <div class="absolute -top-5 left-1/2 -translate-x-1/2 w-32 h-8 bg-doodle-pink/80 rotate-2 backdrop-blur-sm shadow-sm"></div>
+        
+        <div class="text-center mb-8">
+            <h1 class="font-comic text-5xl text-doodle-dark mb-2 text-doodle-purple">RECUPERAR</h1>
+            <p class="font-marker text-gray-600">Esqueceu a senha? Relaxa, a gente resolve.</p>
+        </div>
+
+        <form id="recovery-form" onsubmit="handleRecovery(event)" class="space-y-6">
+            <div>
+                <label class="font-bold font-comic text-xl ml-1 block mb-1">SEU EMAIL DE ALUNO</label>
+                <input type="email" id="email" class="w-full border-2 border-doodle-dark p-3 text-lg font-sans shadow-sm focus:shadow-[4px_4px_0px_#2D2B38] focus:outline-none transition-all" placeholder="exemplo@email.com" required>
+            </div>
+
+            <button type="submit" id="btn-submit" class="w-full bg-doodle-green text-doodle-dark font-comic text-3xl py-4 border-2 border-doodle-dark shadow-[4px_4px_0px_#2D2B38] hover:-translate-y-1 hover:shadow-[6px_6px_0px_#2D2B38] transition-all active:translate-y-0 active:shadow-none">
+                ENVIAR LINK DE RECUPERAÇÃO
+            </button>
+        </form>
+
+        <div class="text-center mt-8 pt-6 border-t-2 border-dashed border-gray-300">
+            <a href="#" onclick="window.close()" class="font-bold text-gray-400 hover:text-doodle-purple transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="x-circle" class="w-4 h-4"></i> FECHAR JANELA
+            </a>
+        </div>
+    </div>
+
+    <script>lucide.createIcons();</script>
+</body>
+</html>
