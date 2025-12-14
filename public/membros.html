@@ -12,10 +12,10 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // =========================================================================
-        // ⚙️ CONFIGURAÇÃO UNIFICADA (A MESMA DO ADMIN)
+        // ⚙️ CONFIGURAÇÃO
         // =========================================================================
         const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
 
@@ -42,7 +42,6 @@
         // =========================================================================
         // 📦 DADOS DOS PRODUTOS EXTRAS (LOJA)
         // =========================================================================
-        // TODO: Substitua os '#' pelos seus links de checkout reais (Hotmart/Cakto)
         const extraProducts = [
             { 
                 id: 'pack-edit', 
@@ -74,6 +73,7 @@
         let completedLessonIds = new Set(); 
         let currentLessonIndex = -1;
         let currentUser = null;
+        let userUniqueCode = "CARREGANDO...";
 
         // Auth Init
         const initAuth = async () => {
@@ -84,7 +84,7 @@
         };
         initAuth();
 
-        onAuthStateChanged(auth, (user) => {
+        onAuthStateChanged(auth, async (user) => {
             const loader = document.getElementById('global-loader');
             if(loader) loader.classList.add('hidden');
 
@@ -92,14 +92,32 @@
                 window.location.href = 'index.html';
             } else {
                 currentUser = user;
-                const userName = localStorage.getItem('userName') || user.email || 'Aluno';
-                const initials = userName.charAt(0).toUpperCase();
-                document.getElementById('user-avatar').innerText = initials;
                 
-                window.currentUserInfo = {
-                    name: userName,
-                    uid: user.uid.substring(0, 6).toUpperCase()
-                };
+                // 1. Carregar perfil do Firestore para pegar o CÓDIGO ÚNICO
+                try {
+                    const userDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', user.uid);
+                    const userSnap = await getDoc(userDocRef);
+                    
+                    let userName = user.email;
+                    if (userSnap.exists()) {
+                        const data = userSnap.data();
+                        userName = data.name || user.email;
+                        // Pega o código gerado pelo seu Backend
+                        userUniqueCode = data.uniqueCode || user.uid.substring(0, 8).toUpperCase();
+                    } else {
+                        // Fallback se o usuário ainda não tiver documento no banco
+                        userUniqueCode = user.uid.substring(0, 8).toUpperCase();
+                    }
+
+                    // Atualiza UI global com iniciais
+                    const initials = userName.charAt(0).toUpperCase();
+                    document.getElementById('user-avatar').innerText = initials;
+                    window.currentUserInfo = { name: userName, uid: userUniqueCode }; 
+
+                } catch (err) {
+                    console.error("Erro ao carregar perfil:", err);
+                    userUniqueCode = user.uid;
+                }
 
                 loadLessons();
                 loadUserProgress(user.uid);
@@ -125,10 +143,8 @@
                 
                 if (currentLessonIndex === -1) {
                     if (savedLessonIndex !== null && lessons[savedLessonIndex]) {
-                        // Se tem aula salva, carrega ela
                         loadLesson(parseInt(savedLessonIndex));
                     } else if (lessons.length > 0) {
-                        // Senão, mostra tela de boas-vindas
                         showSelectLessonState();
                     } else {
                         showEmptyState();
@@ -240,7 +256,7 @@
                 sidebarContent.appendChild(details);
             });
 
-            // LOJA
+            // LOJA EXTRA
             const storeTitle = document.createElement('div');
             storeTitle.className = "px-2 py-3 font-marker text-doodle-pink text-lg transform rotate-1 border-t-4 border-doodle-dark mt-8 mb-4 bg-doodle-dark/5";
             storeTitle.innerHTML = "⚡ TURBINE SUA EDIÇÃO";
@@ -275,7 +291,6 @@
         // --- CONTROLE DE AULA E MODAL ---
 
         window.openPurchaseModal = (product) => {
-            // Agora abre o link real em nova aba
             if(product.link && product.link !== '#') {
                 window.open(product.link, '_blank');
             } else {
@@ -288,17 +303,18 @@
             currentLessonIndex = index;
             const lesson = currentLessons[index];
             
-            // SALVA O ESTADO DA AULA ATUAL (PERSISTÊNCIA)
+            // Salva estado
             if(currentUser) {
                 localStorage.setItem(`lastLesson_${currentUser.uid}`, index);
             }
 
+            // Atualiza Textos
             document.getElementById('lesson-title').innerText = lesson.title.toUpperCase();
             document.getElementById('lesson-desc').innerText = lesson.description || 'Sem descrição.';
             document.getElementById('module-bread').innerText = lesson.moduleName;
             document.getElementById('lesson-bread').innerText = lesson.title;
 
-            // --- LÓGICA DO ANEXO (NOVO) ---
+            // Botão de Anexo
             const btnAttach = document.getElementById('btn-attachment');
             if (lesson.attachmentUrl) {
                 btnAttach.href = lesson.attachmentUrl;
@@ -317,12 +333,13 @@
 
             const playerContainer = document.getElementById('video-player-container');
             
-            // EXTRAÇÃO DE ID DO YOUTUBE MELHORADA (REGEX ROBUSTO)
+            // Regex YouTube
             const ytRegex = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
             const match = lesson.videoUrl ? lesson.videoUrl.match(ytRegex) : null;
             const ytId = (match && match[2].length === 11) ? match[2] : null;
 
             if (ytId) {
+                // PLAYER YOUTUBE COM MARCA D'ÁGUA DO CÓDIGO ÚNICO
                 playerContainer.innerHTML = `
                     <div class="relative w-full h-full bg-black">
                         <iframe id="yt-player" width="100%" height="100%" src="https://www.youtube.com/embed/${ytId}?modestbranding=1&rel=0" frameborder="0" allowfullscreen></iframe>
@@ -334,6 +351,7 @@
                 `;
                 startWatermarkAnimation();
             } else {
+                // PLAYER CUSTOMIZADO COM MARCA D'ÁGUA
                 renderCustomPlayer(playerContainer, lesson.videoUrl);
             }
         }
@@ -423,20 +441,24 @@
             }
         }
 
-        // --- PLAYER & UTILITÁRIOS ---
+        // --- PLAYER CUSTOMIZADO & ANIMAÇÃO ---
 
         function renderCustomPlayer(container, url) {
             container.innerHTML = `
                 <div class="relative w-full h-full group bg-black overflow-hidden select-none" oncontextmenu="return false;">
                     <video id="custom-video" class="w-full h-full object-contain" src="${url}" controlsList="nodownload"></video>
-                    <div id="watermark-overlay" class="absolute pointer-events-none font-marker text-white/30 text-2xl z-20 whitespace-nowrap" style="top: 20%; left: 20%; text-shadow: 1px 1px 0 #000;">
+                    
+                    <!-- MARCA D'ÁGUA -->
+                    <div id="watermark-overlay" class="absolute pointer-events-none font-marker text-white/30 text-2xl z-20 whitespace-nowrap transition-all duration-[3000ms] ease-in-out" style="top: 20%; left: 20%; text-shadow: 2px 2px 0 #000;">
                         ${window.currentUserInfo.name} • ${window.currentUserInfo.uid}
                     </div>
+
                     <div id="start-overlay" class="absolute inset-0 flex items-center justify-center bg-black/40 z-30 cursor-pointer" onclick="togglePlay()">
                          <button class="w-24 h-24 bg-doodle-yellow border-4 border-doodle-dark rounded-full flex items-center justify-center text-doodle-dark shadow-hard hover:scale-110 hover:bg-white transition-all transform -rotate-3">
                             <i data-lucide="play" class="w-10 h-10 fill-current ml-1"></i>
                         </button>
                     </div>
+                    
                     <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/90 via-black/60 to-transparent z-30 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                         <div class="relative w-full h-6 mb-2 cursor-pointer group/timeline" onclick="seek(event)">
                             <div class="absolute top-1/2 left-0 w-full h-2 bg-gray-600 rounded-full -translate-y-1/2"></div>
@@ -472,16 +494,8 @@
         window.togglePlay = () => {
             const video = document.getElementById('custom-video');
             const overlay = document.getElementById('start-overlay');
-            const btn = document.getElementById('play-btn');
-            if (video.paused) {
-                video.play();
-                overlay.classList.add('hidden');
-                btn.innerHTML = `<i data-lucide="pause" class="w-8 h-8 fill-current"></i>`;
-            } else {
-                video.pause();
-                btn.innerHTML = `<i data-lucide="play" class="w-8 h-8 fill-current"></i>`;
-            }
-            lucide.createIcons();
+            if (video.paused) { video.play(); overlay.classList.add('hidden'); } 
+            else { video.pause(); }
         };
 
         window.toggleMute = () => {
@@ -544,6 +558,7 @@
             const wm = document.getElementById('watermark-overlay');
             if(!wm) return;
             if (watermarkInterval) clearInterval(watermarkInterval);
+            
             watermarkInterval = setInterval(() => {
                 const top = Math.random() * 80 + 10;
                 const left = Math.random() * 80 + 10;

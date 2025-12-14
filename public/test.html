@@ -5,12 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Akko Academy - Sistema Integrado</title>
     
-    <!-- Dependências Visuais -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800&family=Permanent+Marker&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Configuração do Tailwind -->
+    <!-- Configuração Visual -->
     <script>
         tailwind.config = {
             theme: {
@@ -18,22 +17,21 @@
                     fontFamily: { sans: ['Inter', 'sans-serif'], comic: ['Bangers', 'cursive'], marker: ['Permanent Marker', 'cursive'] },
                     colors: { doodle: { pink: '#FF66C4', green: '#89F279', yellow: '#F2E058', purple: '#6C5DD3', paper: '#F8F9FD', dark: '#2D2B38' } },
                     boxShadow: { 'hard': '4px 4px 0px 0px #2D2B38', 'hard-sm': '2px 2px 0px 0px #2D2B38' },
-                    animation: { 'spin-slow': 'spin 8s linear infinite', 'wiggle': 'wiggle 3s ease-in-out infinite' },
-                    keyframes: { wiggle: { '0%, 100%': { transform: 'rotate(-3deg)' }, '50%': { transform: 'rotate(3deg)' } } }
+                    animation: { 'spin-slow': 'spin 8s linear infinite' }
                 }
             }
         }
     </script>
 
-    <!-- Lógica do Sistema (Firebase + App) -->
+    <!-- Lógica do Sistema -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInWithCustomToken, sendPasswordResetEmail, setPersistence, browserLocalPersistence, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, signInWithCustomToken, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, setDoc, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
         import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
-        // --- 1. CONFIGURAÇÃO UNIFICADA ---
+        // --- CONFIGURAÇÃO ---
         const REAL_APP_ID = '1:56272587692:web:6e62374b91269073784809';
         const firebaseConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
@@ -51,53 +49,82 @@
         const functions = getFunctions(app);
         const appId = REAL_APP_ID;
 
-        // Variáveis Globais de Estado
+        // --- ESTADO GLOBAL ---
         let currentUser = null;
         let globalLessons = [];
-        let currentLessons = []; // Para área de membros
-        let completedLessonIds = new Set();
+        let globalStudents = [];
         let editingLessonId = null;
+        // Estado Membros
+        let currentLessons = [];
+        let completedLessonIds = new Set();
+        let userUniqueCode = "";
 
-        // --- 2. SISTEMA DE NAVEGAÇÃO ---
+        // --- SISTEMA DE NAVEGAÇÃO ---
         window.switchView = (viewId) => {
-            // Esconde todas as views
+            // Esconde todas as views principais
             ['view-login', 'view-admin', 'view-membros', 'view-lab'].forEach(id => {
                 document.getElementById(id).classList.add('hidden');
             });
             // Mostra a selecionada
             document.getElementById(viewId).classList.remove('hidden');
             
-            // Lógica específica ao abrir
-            if(viewId === 'view-admin') initAdminListeners();
+            // Lógica de inicialização de cada view
+            if(viewId === 'view-admin') {
+                if(!currentUser || currentUser.email !== 'admin@akko.com') {
+                    document.getElementById('admin-panel-content').classList.add('hidden');
+                    document.getElementById('admin-login-overlay').classList.remove('hidden');
+                } else {
+                    document.getElementById('admin-panel-content').classList.remove('hidden');
+                    document.getElementById('admin-login-overlay').classList.add('hidden');
+                    initAdminListeners();
+                    switchAdminTab('dashboard'); 
+                }
+            }
             if(viewId === 'view-membros') {
                 if(!currentUser) { alert("Faça login primeiro!"); switchView('view-login'); return; }
                 initMemberListeners();
             }
             
-            // Atualiza botões do menu dev
+            // Atualiza botões do topo
             document.querySelectorAll('.dev-btn').forEach(btn => btn.classList.remove('bg-green-500', 'text-black'));
             document.getElementById(`btn-${viewId}`).classList.add('bg-green-500', 'text-black');
         }
 
-        // --- 3. AUTENTICAÇÃO GERAL ---
+        // --- NAVEGAÇÃO INTERNA DO ADMIN ---
+        window.switchAdminTab = (tabId) => {
+            ['dashboard', 'lessons', 'students'].forEach(id => {
+                const view = document.getElementById('adm-subview-'+id);
+                const btn = document.getElementById('adm-nav-'+id);
+                if(view) view.classList.add('hidden');
+                if(btn) btn.classList.remove('bg-doodle-pink', 'text-white', 'scale-105', 'shadow-sm');
+            });
+            document.getElementById('adm-subview-'+tabId).classList.remove('hidden');
+            document.getElementById('adm-nav-'+tabId).classList.add('bg-doodle-pink', 'text-white', 'scale-105', 'shadow-sm');
+        }
+
+        // --- AUTH & LOGIN ---
         onAuthStateChanged(auth, (user) => {
             currentUser = user;
             const statusDiv = document.getElementById('auth-status');
+            
             if (user) {
-                statusDiv.innerHTML = `Logado como: <span class="text-green-400">${user.email || 'Anônimo'}</span> (${user.uid.slice(0,5)})`;
-                localStorage.setItem('userLoggedIn', 'true');
+                const isAdmin = user.email === 'admin@akko.com';
+                const roleText = isAdmin ? "ADMIN" : "ALUNO";
+                const color = isAdmin ? "text-doodle-pink" : "text-green-400";
                 
-                // Se for admin, libera acesso visual
-                if(user.email === 'admin@akko.com') {
+                statusDiv.innerHTML = `Logado: <span class="${color}">${user.email}</span> [${roleText}]`;
+                
+                if(isAdmin && !document.getElementById('view-admin').classList.contains('hidden')) {
                     document.getElementById('admin-panel-content').classList.remove('hidden');
                     document.getElementById('admin-login-overlay').classList.add('hidden');
+                    initAdminListeners();
                 }
             } else {
                 statusDiv.innerHTML = `Status: <span class="text-red-400">Deslogado</span>`;
-                localStorage.removeItem('userLoggedIn');
-                // Bloqueia admin
-                document.getElementById('admin-panel-content').classList.add('hidden');
-                document.getElementById('admin-login-overlay').classList.remove('hidden');
+                if(!document.getElementById('view-admin').classList.contains('hidden')) {
+                    document.getElementById('admin-panel-content').classList.add('hidden');
+                    document.getElementById('admin-login-overlay').classList.remove('hidden');
+                }
             }
         });
 
@@ -108,11 +135,9 @@
             try {
                 await setPersistence(auth, browserLocalPersistence);
                 await signInWithEmailAndPassword(auth, email, pass);
-                alert("Login realizado!");
-                // Se for admin, vai pro admin, senão membros
                 if(email === 'admin@akko.com') switchView('view-admin');
                 else switchView('view-membros');
-            } catch (err) { alert("Erro: " + err.message); }
+            } catch (err) { alert("Erro de Login: " + err.message); }
         };
 
         window.handleLogout = async () => {
@@ -120,395 +145,552 @@
             switchView('view-login');
         };
 
-        // --- 4. LÓGICA: PAINEL ADMIN ---
+        // =========================================================
+        // LÓGICA DO PAINEL ADMIN (FUNDIDA DO ADMIN.HTML)
+        // =========================================================
         function initAdminListeners() {
+            // Aulas
             const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
             onSnapshot(q, (snap) => {
                 globalLessons = [];
                 snap.forEach(d => globalLessons.push({id: d.id, ...d.data()}));
                 globalLessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-                renderAdminTable();
+                
+                updateDashboardStats();
+                renderLessonsTable();
+                updateModuleDatalist();
             });
             
+            // Alunos
             const qS = query(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
             onSnapshot(qS, (snap) => {
-                const students = [];
-                snap.forEach(d => students.push({id: d.id, ...d.data()}));
-                document.getElementById('count-students').innerText = students.length;
-                renderStudentTable(students);
+                globalStudents = [];
+                snap.forEach(d => globalStudents.push({id: d.id, ...d.data()}));
+                updateDashboardStats();
+                renderStudentsTable();
             });
         }
 
-        window.renderAdminTable = () => {
-            const tbody = document.getElementById('admin-lessons-body');
-            tbody.innerHTML = '';
+        function updateDashboardStats() {
             document.getElementById('count-lessons').innerText = globalLessons.length;
+            document.getElementById('count-students').innerText = globalStudents.length;
+            const uniqueModules = new Set(globalLessons.map(l => l.moduleName));
+            document.getElementById('count-modules').innerText = uniqueModules.size;
+        }
+
+        function updateModuleDatalist() {
+            const datalist = document.getElementById('existing-modules');
+            if(datalist) {
+                datalist.innerHTML = '';
+                new Set(globalLessons.map(l => l.moduleName)).forEach(mod => {
+                    const opt = document.createElement('option');
+                    opt.value = mod;
+                    datalist.appendChild(opt);
+                });
+            }
+        }
+
+        // Renderização: Aulas
+        window.renderLessonsTable = (filter = "") => {
+            const tbody = document.getElementById('lessons-table-body');
+            if(!tbody) return;
+            tbody.innerHTML = '';
             
-            globalLessons.forEach(l => {
+            const filtered = globalLessons.filter(l => l.title.toLowerCase().includes(filter.toLowerCase()));
+
+            if(filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`; return;
+            }
+
+            filtered.forEach(lesson => {
                 const tr = document.createElement('tr');
-                tr.className = "border-b border-gray-200 text-sm";
+                tr.className = "border-b border-gray-200 hover:bg-gray-50 text-sm";
+                const attachIcon = lesson.attachmentUrl ? `<a href="${lesson.attachmentUrl}" target="_blank" class="text-blue-500 hover:scale-110 inline-block"><i data-lucide="paperclip" class="w-4 h-4"></i></a>` : `<span class="text-gray-300">-</span>`;
                 tr.innerHTML = `
-                    <td class="p-2 font-bold text-doodle-purple">${l.moduleName}</td>
-                    <td class="p-2">${l.title}</td>
-                    <td class="p-2 text-right">
-                        <button onclick="deleteDocById('lessons', '${l.id}')" class="text-red-500 hover:text-red-700">Excluir</button>
+                    <td class="p-3 font-comic text-doodle-purple text-base">${lesson.moduleName}</td>
+                    <td class="p-3 font-bold text-gray-700">${lesson.title}</td>
+                    <td class="p-3 text-xs font-mono text-gray-500">${lesson.professor || 'Admin'}</td>
+                    <td class="p-3 text-center">${attachIcon}</td>
+                    <td class="p-3 flex gap-2 justify-end">
+                        <button onclick="openEditLesson('${lesson.id}')" class="p-1 text-blue-500 hover:bg-blue-100 rounded"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                        <button onclick="deleteDocById('lessons', '${lesson.id}')" class="p-1 text-red-500 hover:bg-red-100 rounded"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
+            lucide.createIcons();
         }
 
-        window.renderStudentTable = (students) => {
-            const tbody = document.getElementById('admin-students-body');
+        // Renderização: Alunos (COM IMPERSONATION DO TEST.HTML)
+        window.renderStudentsTable = (filter = "") => {
+            const tbody = document.getElementById('students-table-body');
+            if(!tbody) return;
             tbody.innerHTML = '';
-            students.forEach(s => {
+            
+            const filtered = globalStudents.filter(s => (s.name || "").toLowerCase().includes(filter.toLowerCase()) || (s.email || "").toLowerCase().includes(filter.toLowerCase()));
+
+            if(filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-400 font-marker">Nada encontrado.</td></tr>`; return;
+            }
+
+            filtered.forEach(s => {
+                if(s.email === 'admin@akko.com') return;
+
+                const date = s.createdAt ? new Date(s.createdAt.seconds * 1000).toLocaleDateString('pt-BR') : '-';
                 const tr = document.createElement('tr');
-                tr.innerHTML = `<td class="p-2">${s.name}</td><td class="p-2 text-gray-500">${s.email}</td>`;
+                tr.className = "border-b border-gray-200 hover:bg-gray-50 text-sm";
+                tr.innerHTML = `
+                    <td class="p-3 flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-full bg-doodle-yellow border border-black flex items-center justify-center font-bold text-xs">${(s.name || '?').charAt(0).toUpperCase()}</div>
+                        <div>
+                            <div class="font-bold text-gray-700">${s.name || 'Sem Nome'}</div>
+                            <div class="text-xs text-gray-500">${s.email}</div>
+                        </div>
+                    </td>
+                    <td class="p-3 text-center font-mono text-xs text-doodle-purple">${s.uniqueCode || '-'}</td>
+                    <td class="p-3 text-xs font-mono text-gray-400">${date}</td>
+                    <td class="p-3 flex justify-end gap-2 items-center">
+                        <!-- BOTÃO DE IMPERSONATION (ESSENCIAL DO TEST.HTML) -->
+                        <button onclick="impersonateUser('${s.uid}', '${s.name}')" class="bg-doodle-yellow text-doodle-dark border border-black px-2 py-1 text-xs font-bold hover:bg-white flex items-center gap-1 shadow-sm hover:translate-y-px transition-transform" title="Acessar conta do aluno">
+                            <i data-lucide="eye" class="w-3 h-3"></i> ACESSAR
+                        </button>
+                        <button onclick="deleteDocById('students', '${s.uid}')" class="text-red-500 hover:bg-red-100 p-1 rounded">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </td>
+                `;
                 tbody.appendChild(tr);
             });
+            lucide.createIcons();
         }
 
-        window.createLesson = async (e) => {
+        // --- CRUD AULAS ---
+        window.handleSaveLesson = async (e) => {
             e.preventDefault();
-            const btn = e.target.querySelector('button');
-            btn.disabled = true; btn.innerText = "...";
+            const btn = document.getElementById('btn-save-lesson');
+            btn.innerText = "SALVANDO...";
+            btn.disabled = true;
             
             try {
-                const title = document.getElementById('adm-title').value;
-                const module = document.getElementById('adm-module').value;
-                const url = document.getElementById('adm-url').value;
-                const desc = document.getElementById('adm-desc').value;
-                
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'), {
-                    title, moduleName: module, videoUrl: url, description: desc, professor: "Admin", createdAt: serverTimestamp()
-                });
-                e.target.reset();
-                alert("Aula criada!");
-            } catch(err) { alert(err.message); }
-            finally { btn.disabled = false; btn.innerText = "SALVAR AULA"; }
-        }
+                const title = document.getElementById('inp-title').value;
+                const moduleName = document.getElementById('inp-module').value;
+                const professor = document.getElementById('inp-prof').value;
+                const description = document.getElementById('inp-desc').value;
+                let videoUrl = document.getElementById('inp-url').value;
+                const fileInput = document.getElementById('inp-file');
+                const attachInput = document.getElementById('inp-attachment');
 
-        window.deleteDocById = async (col, id) => {
-            if(confirm("Deletar mesmo?")) {
-                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id));
+                // Upload Vídeo
+                if (fileInput.files.length > 0) {
+                    btn.innerText = "UPANDO VÍDEO...";
+                    const videoRef = ref(storage, `artifacts/${appId}/public/videos/${Date.now()}_${fileInput.files[0].name}`);
+                    const snap = await uploadBytes(videoRef, fileInput.files[0]);
+                    videoUrl = await getDownloadURL(snap.ref);
+                }
+
+                // Upload Anexo
+                let attachmentUrl = null;
+                if (attachInput.files.length > 0) {
+                    btn.innerText = "UPANDO ANEXO...";
+                    const attachRef = ref(storage, `artifacts/${appId}/public/attachments/${Date.now()}_${attachInput.files[0].name}`);
+                    const snapAtt = await uploadBytes(attachRef, attachInput.files[0]);
+                    attachmentUrl = await getDownloadURL(snapAtt.ref);
+                }
+
+                if (!videoUrl && !editingLessonId) throw new Error("Vídeo é obrigatório.");
+
+                const data = { title, moduleName, professor, videoUrl, description };
+                if (attachmentUrl) data.attachmentUrl = attachmentUrl;
+
+                if(!editingLessonId) {
+                    data.createdAt = serverTimestamp();
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'), data);
+                    showAlert("AULA CRIADA", "Sucesso!", "success");
+                } else {
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lessons', editingLessonId), data);
+                    showAlert("AULA ATUALIZADA", "Sucesso!", "success");
+                }
+                closeLessonModal();
+            } catch (err) {
+                console.error(err);
+                showAlert("ERRO", err.message, "error");
+            } finally { 
+                btn.innerText = "SALVAR DADOS"; 
+                btn.disabled = false; 
             }
         }
 
-        // --- 5. LÓGICA: ÁREA DE MEMBROS ---
+        window.deleteDocById = async (col, id) => {
+            if(confirm("Tem certeza que deseja excluir?")) {
+                try { 
+                    if (col === 'students') {
+                        const deleteFunc = httpsCallable(functions, 'deleteStudent');
+                        await deleteFunc({ uid: id, appId: appId });
+                        showAlert("ALUNO DELETADO", "Usuário removido.", "success");
+                    } else {
+                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id));
+                        showAlert("REMOVIDO", "Item excluído.", "success");
+                    }
+                } catch(e) { showAlert("ERRO", e.message, "error"); }
+            }
+        }
+
+        window.syncUsers = async () => {
+            const btn = document.getElementById('btn-sync');
+            btn.disabled = true;
+            btn.innerHTML = `PROCESSANDO...`;
+            try {
+                const syncFunc = httpsCallable(functions, 'syncAuthToFirestore');
+                const result = await syncFunc({ appId: appId });
+                showAlert("SYNC OK", result.data.message, "success");
+                setTimeout(() => window.location.reload(), 1500);
+            } catch (error) {
+                showAlert("ERRO SYNC", error.message, "error");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> SYNC AUTH`;
+                lucide.createIcons();
+            }
+        }
+
+        // --- IMPERSONATION (MÁGICA DO TEST.HTML) ---
+        window.impersonateUser = async (uid, name) => {
+            if(!confirm(`Sair do Admin e entrar como "${name}" para testar?`)) return;
+            
+            // UI de carregamento
+            const overlay = document.createElement('div');
+            overlay.className = "fixed inset-0 z-[100] bg-black/80 flex flex-col items-center justify-center text-white font-comic text-2xl";
+            overlay.innerHTML = `<i data-lucide="loader" class="animate-spin w-12 h-12 mb-4"></i> GERANDO ACESSO...`;
+            document.body.appendChild(overlay);
+            lucide.createIcons();
+
+            try {
+                const func = httpsCallable(functions, 'getImpersonationToken');
+                const result = await func({ uid: uid });
+                const token = result.data.token;
+
+                // Login mágico
+                await signInWithCustomToken(auth, token);
+
+                document.body.removeChild(overlay);
+                // Vai direto para a área de membros
+                switchView('view-membros');
+                
+            } catch (error) {
+                document.body.removeChild(overlay);
+                showAlert("ERRO ACESSO", error.message, "error");
+            }
+        };
+
+        // --- MODAL DE AULA ---
+        window.openCreateLesson = () => {
+            editingLessonId = null;
+            document.getElementById('lesson-modal-title').innerText = "NOVA AULA";
+            document.getElementById('lesson-form').reset();
+            document.getElementById('current-attachment').classList.add('hidden');
+            document.getElementById('lesson-modal').classList.remove('hidden');
+        }
+        
+        window.openEditLesson = (id) => {
+            const lesson = globalLessons.find(l => l.id === id);
+            if(!lesson) return;
+            editingLessonId = id;
+            document.getElementById('lesson-modal-title').innerText = "EDITAR AULA";
+            document.getElementById('inp-module').value = lesson.moduleName;
+            document.getElementById('inp-title').value = lesson.title;
+            document.getElementById('inp-prof').value = lesson.professor || 'Admin';
+            document.getElementById('inp-desc').value = lesson.description || '';
+            if(lesson.videoUrl) {
+                document.getElementById('inp-url').value = lesson.videoUrl;
+                toggleVideoInput('url'); 
+            }
+            if(lesson.attachmentUrl) {
+                document.getElementById('current-attachment').classList.remove('hidden');
+                document.getElementById('attachment-link').href = lesson.attachmentUrl;
+            } else {
+                document.getElementById('current-attachment').classList.add('hidden');
+            }
+            document.getElementById('lesson-modal').classList.remove('hidden');
+        }
+        
+        window.closeLessonModal = () => document.getElementById('lesson-modal').classList.add('hidden');
+        
+        window.toggleVideoInput = (type) => {
+            document.getElementById('container-url').classList.toggle('hidden', type !== 'url');
+            document.getElementById('container-file').classList.toggle('hidden', type !== 'file');
+            document.getElementById('tab-url').className = type === 'url' ? "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow" : "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white";
+            document.getElementById('tab-file').className = type === 'file' ? "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow" : "px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white";
+        }
+
+        window.filterLessons = (e) => renderLessonsTable(e.target.value);
+        window.filterStudents = (e) => renderStudentsTable(e.target.value);
+
+        // --- PREVIEW MEMBROS (SIMPLIFICADO) ---
         function initMemberListeners() {
+            if(currentUser) {
+                const uRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', currentUser.uid);
+                onSnapshot(uRef, (snap) => {
+                    if(snap.exists()) userUniqueCode = snap.data().uniqueCode || currentUser.uid.slice(0,6);
+                    else userUniqueCode = currentUser.uid.slice(0,6);
+                });
+            }
             const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'lessons'));
             onSnapshot(q, (snap) => {
                 currentLessons = [];
                 snap.forEach(d => currentLessons.push({id: d.id, ...d.data()}));
                 currentLessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-                renderMemberSidebar();
-            });
-
-            if(currentUser) {
-                const pRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'progress');
-                onSnapshot(pRef, (snap) => {
-                    completedLessonIds.clear();
-                    snap.forEach(d => completedLessonIds.add(d.id));
-                    renderMemberSidebar();
-                    updateProgressUI();
-                });
-            }
-        }
-
-        window.renderMemberSidebar = () => {
-            const container = document.getElementById('member-sidebar');
-            container.innerHTML = '';
-            
-            const modules = {};
-            currentLessons.forEach((l, i) => {
-                if(!modules[l.moduleName]) modules[l.moduleName] = [];
-                modules[l.moduleName].push({...l, idx: i});
-            });
-
-            Object.keys(modules).forEach(mod => {
-                const det = document.createElement('details');
-                det.className = "mb-2 group";
-                det.open = true;
-                det.innerHTML = `
-                    <summary class="font-comic text-xl p-2 bg-doodle-yellow border-2 border-doodle-dark cursor-pointer list-none flex justify-between">
-                        <span>${mod}</span> <span class="transform group-open:rotate-180">▼</span>
-                    </summary>
-                    <div class="bg-white border-2 border-t-0 border-doodle-dark p-2 space-y-2">
-                        ${modules[mod].map(l => `
-                            <button onclick="playLesson(${l.idx})" class="w-full text-left p-2 hover:bg-gray-100 flex items-center gap-2 text-sm">
-                                <div class="w-4 h-4 border border-black ${completedLessonIds.has(l.id) ? 'bg-doodle-green' : 'bg-white'}"></div>
-                                ${l.title}
-                            </button>
-                        `).join('')}
-                    </div>
-                `;
-                container.appendChild(det);
+                document.getElementById('member-sidebar').innerHTML = '<div class="p-4 text-gray-500 text-sm">Lista carregada. Abra "membros.html" para ver completo.</div>';
             });
         }
 
-        window.playLesson = (idx) => {
-            const l = currentLessons[idx];
-            if(!l) return;
-            
-            document.getElementById('player-area').innerHTML = `
-                <h2 class="font-comic text-4xl mb-2">${l.title}</h2>
-                <div class="aspect-video bg-black border-4 border-doodle-dark shadow-hard relative">
-                    <iframe src="${getEmbedUrl(l.videoUrl)}" class="w-full h-full" frameborder="0" allowfullscreen></iframe>
-                </div>
-                <div class="mt-4 p-4 bg-white border-2 border-doodle-dark">
-                    <h3 class="font-bold">Descrição:</h3>
-                    <p>${l.description || 'Sem descrição.'}</p>
-                    <button onclick="toggleComplete('${l.id}', '${l.title}')" class="mt-4 bg-doodle-green px-4 py-2 border-2 border-doodle-dark shadow-hard-sm hover:translate-y-1 transition-transform">
-                        MARCAR COMO VISTO
-                    </button>
-                </div>
-            `;
-        }
-
-        window.toggleComplete = async (lid, title) => {
-            if(!currentUser) return;
-            const ref = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'progress', lid);
-            if(completedLessonIds.has(lid)) await deleteDoc(ref);
-            else await setDoc(ref, { title, at: serverTimestamp() });
-        }
-
-        function getEmbedUrl(url) {
-            if(!url) return '';
-            const ytRegex = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-            const match = url.match(ytRegex);
-            return (match && match[2].length === 11) ? `https://www.youtube.com/embed/${match[2]}` : url;
-        }
-
-        function updateProgressUI() {
-            const total = currentLessons.length;
-            const done = completedLessonIds.size;
-            const pct = total === 0 ? 0 : Math.round((done/total)*100);
-            document.getElementById('prog-bar').style.width = `${pct}%`;
-            document.getElementById('prog-text').innerText = `${pct}%`;
-        }
-
-        // --- 6. LÓGICA: LAB DE TESTES (MERGED) ---
-        
-        // A. Gerador de Dados
-        window.generateTestUsers = async () => {
+        // --- LAB (GERAÇÃO DE DADOS & WEBHOOK) ---
+        window.createRealMember = async () => {
+            const btn = document.getElementById('btn-create');
             const log = document.getElementById('lab-log');
-            log.innerHTML = "Gerando...";
+            btn.disabled = true; btn.innerText = "CRIANDO..."; log.innerHTML = "Iniciando...";
             try {
-                for(let i=0; i<3; i++) {
-                    const name = `Aluno Teste ${Math.floor(Math.random()*1000)}`;
-                    const email = `teste.${Date.now()}@exemplo.com`;
-                    // Cria direto no Firestore
-                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'students'), {
-                        name, email, uid: `mock_${Date.now()}`, createdAt: serverTimestamp()
-                    });
-                    log.innerHTML += `<br>Criado: ${name}`;
-                }
-                log.innerHTML += "<br><b>Concluído! Veja no Admin.</b>";
-            } catch(e) { log.innerText = "Erro: " + e.message; }
+                const fakeId = Math.floor(Math.random() * 1000);
+                const func = httpsCallable(functions, 'createMember');
+                const res = await func({ name: `Aluno Teste ${fakeId}`, email: `teste.${fakeId}@akko.com`, appId: REAL_APP_ID });
+                const d = res.data.data;
+                log.innerHTML = `<div class="bg-green-100 p-2 border border-green-500 text-xs mt-2 text-green-800"><b>SUCESSO!</b><br>Email: ${d.email}<br>Senha: ${d.password}</div>`;
+            } catch (e) { log.innerHTML = `<div class="text-red-500 text-xs">Erro: ${e.message}</div>`; }
+            finally { btn.disabled = false; btn.innerText = "CRIAR ALUNO"; }
         }
 
-        // B. Teste de Webhook (Trazido do antigo test.html)
         window.testWebhook = async (e) => {
             e.preventDefault();
             const url = document.getElementById('webhook-url').value;
-            const email = document.getElementById('webhook-email').value;
-            const name = document.getElementById('webhook-name').value;
-            const log = document.getElementById('log-webhook');
-            const btn = document.getElementById('btn-webhook');
-
             if(!url) { alert("Cole a URL da função!"); return; }
-
-            btn.disabled = true;
-            btn.innerText = "ENVIANDO...";
-            log.innerHTML = "Enviando POST...";
-
+            document.getElementById('log-webhook').innerHTML = "Enviando...";
             try {
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        client: { name, email },
-                        event: "purchase_approved",
-                        product_id: "test_prod_123"
+                        email: document.getElementById('webhook-email').value,
+                        name: document.getElementById('webhook-name').value,
+                        event: "purchase_approved"
                     })
                 });
-
                 const text = await response.text();
-                log.innerHTML = `<div class="bg-gray-100 p-2 border text-xs mt-2">Status: ${response.status}<br>Resp: ${text}</div>`;
+                document.getElementById('log-webhook').innerHTML = `<div class="bg-gray-100 p-2 text-xs">Resp: ${text}</div>`;
             } catch (error) {
-                log.innerHTML = `<div class="text-red-600 mt-2">Erro: ${error.message}</div>`;
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "DISPARAR";
+                document.getElementById('log-webhook').innerHTML = `<div class="text-red-600 text-xs">Erro: ${error.message}</div>`;
             }
         };
 
-        // Init Icons
+        // --- SISTEMA DE ALERTAS (DO ADMIN.HTML) ---
+        window.showAlert = (title, msg, type = 'info') => {
+            const modal = document.getElementById('custom-alert');
+            const titleEl = document.getElementById('alert-title');
+            const msgEl = document.getElementById('alert-msg');
+            const iconEl = document.getElementById('alert-icon');
+            
+            titleEl.innerText = title;
+            msgEl.innerText = msg;
+            
+            titleEl.className = "font-comic text-3xl mb-2 " + (type === 'error' ? "text-red-600" : type === 'success' ? "text-green-600" : "text-doodle-dark");
+            iconEl.setAttribute('data-lucide', type === 'error' ? 'alert-triangle' : type === 'success' ? 'check-circle' : 'info');
+            iconEl.className = "w-10 h-10 absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 " + (type === 'error' ? "text-red-600" : type === 'success' ? "text-green-600" : "text-doodle-purple");
+
+            lucide.createIcons();
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+        window.closeAlert = () => { document.getElementById('custom-alert').classList.add('hidden'); document.getElementById('custom-alert').classList.remove('flex'); }
+
         lucide.createIcons();
     </script>
-
     <style>
         .custom-scroll::-webkit-scrollbar { width: 8px; }
         .custom-scroll::-webkit-scrollbar-track { background: #2D2B38; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #F2E058; }
-        body { overflow: hidden; } /* O scroll é interno nas views */
+        body { overflow: hidden; }
     </style>
 </head>
 <body class="bg-gray-800 text-doodle-dark h-screen flex flex-col font-sans">
 
-    <!-- BARRA DE DESENVOLVEDOR (SUPERIOR) -->
+    <!-- TOP BAR (DEV TOOLKIT) -->
     <div class="h-14 bg-black text-white flex items-center justify-between px-4 z-50 shrink-0 border-b-4 border-doodle-green">
         <div class="flex items-center gap-4">
             <span class="font-comic text-xl text-doodle-green">🛠️ DEV TOOLKIT</span>
-            <div id="auth-status" class="text-xs font-mono text-gray-400 ml-4">Carregando Auth...</div>
+            <div id="auth-status" class="text-xs font-mono text-gray-400 ml-4">Carregando...</div>
         </div>
         <div class="flex gap-2">
-            <button id="btn-view-login" onclick="switchView('view-login')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors bg-green-500 text-black font-bold">1. LOGIN</button>
-            <button id="btn-view-admin" onclick="switchView('view-admin')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors">2. ADMIN</button>
-            <button id="btn-view-membros" onclick="switchView('view-membros')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors">3. MEMBROS</button>
+            <button id="btn-view-login" onclick="switchView('view-login')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded bg-green-500 text-black font-bold transition-colors">1. LOGIN</button>
+            <button id="btn-view-admin" onclick="switchView('view-admin')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors">2. ADMIN (FULL)</button>
+            <button id="btn-view-membros" onclick="switchView('view-membros')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors">3. PREVIEW</button>
             <button id="btn-view-lab" onclick="switchView('view-lab')" class="dev-btn px-3 py-1 text-xs border border-gray-600 hover:bg-gray-700 rounded transition-colors">4. LAB</button>
-            <button onclick="handleLogout()" class="ml-4 px-3 py-1 text-xs bg-red-600 hover:bg-red-700 rounded font-bold">SAIR</button>
+            <button onclick="handleLogout()" class="ml-4 px-3 py-1 text-xs bg-red-600 hover:bg-red-700 rounded font-bold transition-colors">SAIR</button>
         </div>
     </div>
 
-    <!-- CONTAINER PRINCIPAL -->
+    <!-- MAIN CONTENT AREA -->
     <div class="flex-1 relative bg-doodle-paper overflow-hidden">
 
-        <!-- === VIEW 1: LOGIN === -->
-        <div id="view-login" class="absolute inset-0 flex items-center justify-center bg-[url('https://www.transparenttextures.com/patterns/graphy.png')]">
+        <!-- ALERT POPUP -->
+        <div id="custom-alert" class="fixed inset-0 z-[200] hidden items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="bg-white border-4 border-doodle-dark shadow-[8px_8px_0px_#2D2B38] p-6 max-w-sm w-full relative transform rotate-1">
+                <i id="alert-icon"></i>
+                <h3 id="alert-title"></h3>
+                <p id="alert-msg" class="font-marker text-lg text-gray-600 mb-6"></p>
+                <button onclick="closeAlert()" class="w-full bg-doodle-yellow font-comic text-2xl py-2 border-2 border-doodle-dark shadow-sm hover:translate-y-1 transition-transform">OK</button>
+            </div>
+        </div>
+
+        <!-- VIEW 1: LOGIN -->
+        <div id="view-login" class="absolute inset-0 flex items-center justify-center bg-gray-200 bg-[url('https://www.transparenttextures.com/patterns/graphy.png')]">
             <div class="bg-white p-8 border-4 border-doodle-dark shadow-hard max-w-sm w-full transform -rotate-1">
                 <h1 class="font-comic text-5xl text-center mb-6 text-doodle-purple">AKKO LOGIN</h1>
                 <form onsubmit="handleLogin(event)" class="space-y-4">
-                    <input type="email" id="login-email" class="w-full border-2 border-doodle-dark p-2" placeholder="Email (admin@akko.com)" required>
+                    <input type="email" id="login-email" class="w-full border-2 border-doodle-dark p-2" placeholder="admin@akko.com" required>
                     <input type="password" id="login-pass" class="w-full border-2 border-doodle-dark p-2" placeholder="Senha" required>
                     <button type="submit" class="w-full bg-doodle-pink text-white font-comic text-2xl py-2 border-2 border-doodle-dark shadow-sm hover:translate-y-1 transition-transform">ENTRAR</button>
                 </form>
-                <div class="mt-4 text-xs text-center text-gray-500">
-                    Dica: Use <b>admin@akko.com</b> para testar o Admin.
-                </div>
+                <div class="mt-4 text-xs text-center text-gray-500">Dica: Use <b>admin@akko.com</b></div>
             </div>
         </div>
 
-        <!-- === VIEW 2: ADMIN === -->
+        <!-- VIEW 2: ADMIN (FUSIONADA COM ADMIN.HTML) -->
         <div id="view-admin" class="hidden absolute inset-0 flex flex-col bg-gray-100">
-            <!-- Bloqueio se não for admin -->
-            <div id="admin-login-overlay" class="absolute inset-0 z-10 bg-black/80 flex items-center justify-center text-white font-comic text-3xl">
-                🔒 ACESSO RESTRITO A ADMINS
-            </div>
-
-            <div id="admin-panel-content" class="flex h-full">
-                <!-- Sidebar Admin -->
-                <div class="w-64 bg-white border-r-4 border-doodle-dark p-4 flex flex-col gap-4">
-                    <div class="bg-doodle-yellow p-4 border-2 border-doodle-dark text-center font-comic text-2xl shadow-sm">
-                        PAINEL ADMIN
+            <!-- Bloqueio -->
+            <div id="admin-login-overlay" class="absolute inset-0 z-10 bg-black/80 flex items-center justify-center text-white font-comic text-3xl">🔒 RESTRITO ADMIN</div>
+            
+            <div id="admin-panel-content" class="flex h-full hidden">
+                <!-- Sidebar Admin Interna -->
+                <aside class="w-64 bg-white border-r-4 border-doodle-dark flex flex-col z-20 shadow-hard">
+                    <div class="h-20 flex items-center justify-center border-b-4 border-doodle-dark bg-doodle-yellow">
+                        <span class="font-comic text-3xl tracking-wide">AKKO <span class="text-white" style="-webkit-text-stroke: 1px black;">ADMIN</span></span>
                     </div>
+                    <nav class="flex-1 p-4 space-y-2">
+                        <button id="adm-nav-dashboard" onclick="switchAdminTab('dashboard')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all hover:bg-gray-100 flex items-center gap-3"><i data-lucide="layout-dashboard" class="w-6 h-6"></i> DASHBOARD</button>
+                        <button id="adm-nav-lessons" onclick="switchAdminTab('lessons')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all hover:bg-gray-100 flex items-center gap-3"><i data-lucide="video" class="w-6 h-6"></i> AULAS</button>
+                        <button id="adm-nav-students" onclick="switchAdminTab('students')" class="w-full text-left p-3 font-comic text-xl border-2 border-transparent rounded transition-all hover:bg-gray-100 flex items-center gap-3"><i data-lucide="users" class="w-6 h-6"></i> ALUNOS</button>
+                    </nav>
+                </aside>
+
+                <!-- Content Admin Interno -->
+                <main class="flex-1 p-8 overflow-y-auto custom-scroll relative bg-[url('https://www.transparenttextures.com/patterns/graphy.png')]">
                     
-                    <!-- Stats Rápidos -->
-                    <div class="grid grid-cols-2 gap-2 text-center text-xs font-mono">
-                        <div class="bg-blue-100 p-2 border border-blue-300 rounded">
-                            Aulas: <b id="count-lessons">0</b>
-                        </div>
-                        <div class="bg-green-100 p-2 border border-green-300 rounded">
-                            Alunos: <b id="count-students">0</b>
+                    <!-- Subview: Dashboard -->
+                    <div id="adm-subview-dashboard" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard hover:-translate-y-1 transition-transform">
+                                <div class="flex justify-between"><div><p class="font-comic text-xl text-gray-500">ALUNOS</p><h3 id="count-students" class="font-comic text-6xl text-doodle-purple">0</h3></div><div class="p-3 bg-doodle-purple text-white rounded-full border-2 border-doodle-dark h-fit"><i data-lucide="users"></i></div></div>
+                            </div>
+                            <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard hover:-translate-y-1 transition-transform">
+                                <div class="flex justify-between"><div><p class="font-comic text-xl text-gray-500">AULAS</p><h3 id="count-lessons" class="font-comic text-6xl text-doodle-pink">0</h3></div><div class="p-3 bg-doodle-pink text-white rounded-full border-2 border-doodle-dark h-fit"><i data-lucide="play-circle"></i></div></div>
+                            </div>
+                            <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard hover:-translate-y-1 transition-transform">
+                                <div class="flex justify-between"><div><p class="font-comic text-xl text-gray-500">MÓDULOS</p><h3 id="count-modules" class="font-comic text-6xl text-doodle-yellow">0</h3></div><div class="p-3 bg-doodle-yellow text-doodle-dark rounded-full border-2 border-doodle-dark h-fit"><i data-lucide="layers"></i></div></div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Criar Aula -->
-                    <div class="border-t-2 border-dashed border-gray-300 pt-4">
-                        <h3 class="font-bold mb-2 text-sm">NOVA AULA</h3>
-                        <form onsubmit="createLesson(event)" class="space-y-2">
-                            <input id="adm-module" class="w-full text-xs p-1 border border-gray-400" placeholder="Módulo (ex: Módulo 1)" required>
-                            <input id="adm-title" class="w-full text-xs p-1 border border-gray-400" placeholder="Título da Aula" required>
-                            <input id="adm-url" class="w-full text-xs p-1 border border-gray-400" placeholder="Link YouTube" required>
-                            <textarea id="adm-desc" class="w-full text-xs p-1 border border-gray-400" placeholder="Descrição"></textarea>
-                            <button type="submit" class="w-full bg-doodle-green text-xs font-bold py-2 border border-black shadow-sm hover:bg-white">SALVAR AULA</button>
-                        </form>
+                    <!-- Subview: Lessons -->
+                    <div id="adm-subview-lessons" class="hidden flex-col h-full">
+                        <div class="flex justify-between items-center mb-6">
+                            <h1 class="font-comic text-4xl text-doodle-dark">GERENCIAR AULAS</h1>
+                            <button onclick="openCreateLesson()" class="bg-doodle-green text-doodle-dark px-6 py-2 font-comic text-xl border-2 border-doodle-dark shadow-hard hover:bg-white transition-colors">+ NOVA AULA</button>
+                        </div>
+                        <div class="bg-white border-4 border-doodle-dark shadow-hard flex-1 flex flex-col min-h-[500px]">
+                            <div class="p-4 border-b-2 border-doodle-dark bg-gray-50 flex gap-4">
+                                <div class="relative flex-1"><i data-lucide="search" class="absolute left-3 top-3 w-5 h-5 text-gray-400"></i><input type="text" onkeyup="filterLessons(event)" placeholder="Buscar aula..." class="w-full pl-10 pr-4 py-2 border-2 border-doodle-dark rounded"></div>
+                            </div>
+                            <div class="overflow-y-auto flex-1 custom-scroll"><table class="w-full text-left"><tbody id="lessons-table-body"></tbody></table></div>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Lista de Conteúdo -->
-                <div class="flex-1 p-8 overflow-y-auto custom-scroll">
-                    <div class="grid grid-cols-2 gap-8">
-                        <!-- Lista Aulas -->
-                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-4">
-                            <h2 class="font-comic text-2xl mb-4 border-b-2 border-black pb-1">LISTA DE AULAS</h2>
-                            <table class="w-full text-left">
-                                <thead><tr class="bg-gray-100 text-xs"><th class="p-2">MÓDULO</th><th class="p-2">TÍTULO</th><th class="p-2 text-right">AÇÃO</th></tr></thead>
-                                <tbody id="admin-lessons-body"></tbody>
-                            </table>
+                    <!-- Subview: Students -->
+                    <div id="adm-subview-students" class="hidden flex-col h-full">
+                        <div class="flex justify-between items-center mb-6">
+                            <h1 class="font-comic text-4xl text-doodle-dark">BASE DE ALUNOS</h1>
+                            <div class="flex gap-2">
+                                <button onclick="syncUsers()" id="btn-sync" class="bg-doodle-yellow px-3 py-1 font-bold text-xs border-2 border-doodle-dark flex items-center shadow-sm hover:translate-y-1"><i data-lucide="refresh-cw" class="w-4 h-4 mr-2"></i> SYNC AUTH</button>
+                                <div class="relative w-48"><i data-lucide="search" class="absolute left-2 top-2 w-4 h-4 text-gray-400"></i><input type="text" onkeyup="filterStudents(event)" placeholder="Buscar..." class="w-full pl-8 py-1 border-2 border-doodle-dark text-sm rounded"></div>
+                            </div>
                         </div>
-                        <!-- Lista Alunos -->
-                        <div class="bg-white border-4 border-doodle-dark shadow-hard p-4">
-                            <h2 class="font-comic text-2xl mb-4 border-b-2 border-black pb-1">LISTA DE ALUNOS</h2>
-                            <table class="w-full text-left">
-                                <tbody id="admin-students-body" class="text-sm"></tbody>
-                            </table>
+                        <div class="bg-white border-4 border-doodle-dark shadow-hard flex-1 flex flex-col min-h-[500px]">
+                            <div class="overflow-y-auto flex-1 custom-scroll"><table class="w-full text-left"><tbody id="students-table-body"></tbody></table></div>
                         </div>
                     </div>
-                </div>
+
+                </main>
             </div>
         </div>
 
-        <!-- === VIEW 3: MEMBROS === -->
+        <!-- VIEW 3: MEMBROS (PREVIEW) -->
         <div id="view-membros" class="hidden absolute inset-0 flex flex-col">
-            <!-- Header Membros -->
             <div class="h-16 bg-white border-b-4 border-doodle-dark flex items-center justify-between px-6">
-                <span class="font-comic text-2xl text-doodle-purple">🎓 ÁREA DO ALUNO</span>
-                <div class="w-48">
-                    <div class="flex justify-between text-xs font-bold mb-1"><span>PROGRESSO</span><span id="prog-text">0%</span></div>
-                    <div class="w-full bg-gray-200 h-2 border border-black rounded-full overflow-hidden">
-                        <div id="prog-bar" class="h-full bg-doodle-green w-0 transition-all duration-500"></div>
-                    </div>
-                </div>
+                <span class="font-comic text-2xl text-doodle-purple">🎓 PREVIEW ALUNO</span>
             </div>
-
             <div class="flex-1 flex overflow-hidden">
-                <!-- Sidebar Aulas -->
-                <div class="w-80 bg-gray-50 border-r-4 border-doodle-dark overflow-y-auto custom-scroll p-4" id="member-sidebar">
-                    <!-- Inserido via JS -->
-                </div>
-
-                <!-- Player -->
-                <div class="flex-1 bg-doodle-paper p-8 overflow-y-auto custom-scroll" id="player-area">
-                    <div class="flex flex-col items-center justify-center h-full opacity-50">
-                        <i data-lucide="play-circle" class="w-24 h-24 mb-4"></i>
-                        <h2 class="font-comic text-3xl">SELECIONE UMA AULA PARA COMEÇAR</h2>
+                <div class="w-80 bg-gray-50 border-r-4 border-doodle-dark overflow-y-auto custom-scroll p-4" id="member-sidebar"></div>
+                <div class="flex-1 bg-doodle-paper p-8 flex items-center justify-center">
+                    <div class="text-center opacity-50">
+                        <i data-lucide="monitor-play" class="w-24 h-24 mx-auto mb-4"></i>
+                        <h2 class="font-comic text-3xl">PREVIEW RÁPIDO</h2>
+                        <p>Para a experiência completa, abra o arquivo <b>membros.html</b></p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- === VIEW 4: LAB TESTES === -->
+        <!-- VIEW 4: LAB -->
         <div id="view-lab" class="hidden absolute inset-0 flex items-center justify-center bg-[#2D2B38]">
             <div class="max-w-4xl w-full grid grid-cols-2 gap-8">
-                <div class="col-span-2 text-center text-white mb-4">
-                    <h1 class="font-comic text-5xl text-doodle-yellow">LABORATÓRIO</h1>
-                    <p class="font-marker opacity-70">Use para popular o banco de dados sem esforço.</p>
+                <div class="col-span-2 text-center text-white mb-4"><h1 class="font-comic text-5xl text-doodle-yellow">LABORATÓRIO</h1></div>
+                <!-- Card Gerador -->
+                <div class="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_#F2E058] -rotate-1">
+                    <h3 class="font-bold text-xl mb-2">GERADOR DE ALUNO REAL</h3>
+                    <p class="text-xs text-gray-500 mb-4">Cria no Auth + Firestore + Gera Senha/Código.</p>
+                    <button id="btn-create" onclick="createRealMember()" class="w-full bg-doodle-purple text-white font-comic text-xl py-2 border-2 border-black hover:bg-doodle-pink transition-colors">CRIAR ALUNO</button>
+                    <div id="lab-log" class="mt-2 text-xs h-24 overflow-y-auto bg-gray-100 p-2 border border-gray-300 font-mono">Aguardando...</div>
                 </div>
-
-                <!-- PAINEL 1: Gerador -->
-                <div class="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_#F2E058] transform -rotate-1">
-                    <h3 class="font-bold text-xl mb-2">GERADOR DE DADOS</h3>
-                    <p class="text-sm mb-4">Cria 3 alunos fictícios e salva no Firestore instantaneamente.</p>
-                    <button onclick="generateTestUsers()" class="w-full bg-doodle-purple text-white font-comic text-xl py-2 border-2 border-black hover:bg-doodle-pink">GERAR 3 ALUNOS</button>
-                    <div id="lab-log" class="mt-2 text-xs h-24 overflow-y-auto bg-gray-100 p-2 border border-gray-300">Aguardando...</div>
-                </div>
-
-                <!-- PAINEL 2: Webhook (Adicionado) -->
-                <div class="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_#89F279] transform rotate-1">
+                <!-- Card Webhook -->
+                <div class="bg-white p-6 border-4 border-black shadow-[8px_8px_0px_#89F279] rotate-1">
                     <h3 class="font-bold text-xl mb-2">TESTAR WEBHOOK</h3>
-                    <p class="text-sm mb-2">Simule uma venda da Hotmart/Cakto.</p>
                     <form onsubmit="testWebhook(event)" class="space-y-2">
-                        <input type="url" id="webhook-url" class="w-full text-xs p-2 border border-black bg-gray-50" placeholder="https://.../handleNewSale" required>
-                        <input type="email" id="webhook-email" class="w-full text-xs p-2 border border-black bg-gray-50" placeholder="email@teste.com" required>
-                        <input type="text" id="webhook-name" class="w-full text-xs p-2 border border-black bg-gray-50" value="Teste Webhook">
-                        <button type="submit" id="btn-webhook" class="w-full bg-doodle-green font-bold text-sm py-2 border border-black hover:bg-white">DISPARAR</button>
+                        <input id="webhook-url" class="w-full text-xs p-2 border border-black" placeholder="URL da Cloud Function" required>
+                        <div class="flex gap-2">
+                            <input id="webhook-email" class="w-1/2 text-xs p-2 border border-black" placeholder="email@teste.com" required>
+                            <input id="webhook-name" class="w-1/2 text-xs p-2 border border-black" value="Teste Webhook">
+                        </div>
+                        <button class="w-full bg-doodle-green text-xs font-bold py-2 border border-black hover:bg-white transition-colors">DISPARAR</button>
                     </form>
-                    <div id="log-webhook" class="mt-2 text-xs h-20 overflow-y-auto bg-gray-100 p-2 border border-gray-300">Logs aqui...</div>
+                    <div id="log-webhook" class="mt-2 text-xs h-20 overflow-y-auto bg-gray-100 p-2 border border-gray-300 font-mono">Logs...</div>
                 </div>
             </div>
         </div>
 
+    </div>
+
+    <!-- MODAL DE EDIÇÃO DE AULA -->
+    <div id="lesson-modal" class="hidden fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-lg border-4 border-doodle-dark shadow-hard p-6 relative transform rotate-1">
+            <button onclick="closeLessonModal()" class="absolute top-2 right-2 text-gray-500 hover:text-red-500 font-bold text-xl">X</button>
+            <h2 id="lesson-modal-title" class="font-comic text-3xl text-doodle-dark mb-4 border-b-2 border-doodle-dark pb-2">NOVA AULA</h2>
+            <form id="lesson-form" onsubmit="handleSaveLesson(event)" class="space-y-3">
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="font-bold text-xs">MÓDULO</label><input list="existing-modules" type="text" id="inp-module" class="w-full border-2 border-doodle-dark p-2 text-sm" required><datalist id="existing-modules"></datalist></div>
+                    <div><label class="font-bold text-xs">PROFESSOR</label><input type="text" id="inp-prof" class="w-full border-2 border-doodle-dark p-2 text-sm" required></div>
+                </div>
+                <div><label class="font-bold text-xs">TÍTULO DA AULA</label><input type="text" id="inp-title" class="w-full border-2 border-doodle-dark p-2 text-sm" required></div>
+                <div>
+                    <label class="font-bold text-xs block mb-1">VÍDEO (LINK OU UPLOAD)</label>
+                    <div class="flex gap-2 mb-2"><button type="button" id="tab-url" onclick="toggleVideoInput('url')" class="px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-doodle-yellow">LINK</button><button type="button" id="tab-file" onclick="toggleVideoInput('file')" class="px-3 py-1 text-xs font-bold border-2 border-doodle-dark bg-white">ARQUIVO</button></div>
+                    <div id="container-url"><input type="text" id="inp-url" class="w-full border-2 border-doodle-dark p-2 text-sm" placeholder="https://youtube.com/..."></div>
+                    <div id="container-file" class="hidden"><input type="file" id="inp-file" class="w-full text-sm" accept="video/*"></div>
+                </div>
+                <div>
+                    <label class="font-bold text-xs block mb-1">MATERIAL DE APOIO</label>
+                    <div class="border-2 border-doodle-dark p-2 bg-gray-50 flex items-center justify-between"><input type="file" id="inp-attachment" class="w-full text-sm"><div id="current-attachment" class="hidden text-xs text-blue-600 font-bold ml-2"><a href="#" target="_blank" id="attachment-link">Ver Atual</a></div></div>
+                </div>
+                <div><label class="font-bold text-xs">DESCRIÇÃO</label><textarea id="inp-desc" class="w-full border-2 border-doodle-dark p-2 text-sm h-24"></textarea></div>
+                <div class="pt-2"><button type="submit" id="btn-save-lesson" class="w-full bg-doodle-green py-3 font-comic text-xl border-2 border-doodle-dark shadow-sm hover:translate-y-1 transition-transform">SALVAR DADOS</button></div>
+            </form>
+        </div>
     </div>
 
 </body>
