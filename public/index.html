@@ -12,9 +12,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // =========================================================================
-        // ⚙️ CONFIGURAÇÃO DO FIREBASE
-        // =========================================================================
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
           authDomain: "akko-academy.firebaseapp.com",
@@ -39,11 +36,6 @@
             }
         });
 
-        // =========================================================================
-        // 🛒 CONFIGURAÇÃO DO CHECKOUT CAKTO
-        // =========================================================================
-        
-        // 👇👇👇 COLE SEU LINK DA CAKTO AQUI EMBAIXO 👇👇👇
         window.buyLink = "https://pay.cakto.com.br/97fsdky_686786"; 
         
         window.goToCheckout = () => {
