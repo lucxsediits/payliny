@@ -10,18 +10,15 @@
     
     <!-- Firebase SDKs -->
     <script type="module">
-        import { initializeApp, getApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, createUserWithEmailAndPassword, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, orderBy, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, deleteDoc, updateDoc, doc, onSnapshot, serverTimestamp, query, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // =========================================================================
         // ⚙️ CONFIGURAÇÃO & CREDENCIAIS
         // =========================================================================
         const ADMIN_EMAIL_PERMITIDO = "admin@akko.com"; // 🚨 Seu email de admin
-        
-        // 🚨 CORREÇÃO AQUI: Deixe vazio para criar o aluno direto no painel (Modo Local)
-        // Se você tiver um n8n ou Cloud Function real, coloque o link aqui.
         const CLOUD_FUNCTION_URL = ""; 
 
         const manualConfig = {
@@ -51,23 +48,33 @@
         let editingLessonId = null;
         let currentUser = null;
 
-        // --- AUTH INIT ---
+        // --- AUTH INIT CORRIGIDO ---
         const initAuth = async () => {
-             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
+            // FIX: Só tenta o token de teste se NÃO tivermos feito login manual de admin antes.
+            // Isso previne que o refresh da página te deslogue.
+            const isAdminLogged = localStorage.getItem('adminLoggedIn') === 'true';
+
+            if (!isAdminLogged && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                try {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } catch (e) { console.log("Ignorando token de teste..."); }
             }
         };
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
+                // Se o email bater, é sucesso
                 if(user.email === ADMIN_EMAIL_PERMITIDO) {
                     currentUser = user;
+                    // Garante que a flag está salva
+                    localStorage.setItem('adminLoggedIn', 'true');
                     showAdminPanel();
                     initRealtimeListeners();
                 } else {
-                    alert("Acesso negado: Apenas para Admin.");
-                    signOut(auth);
+                    // FIX: Se estiver logado com outro user (ex: token de teste), NÃO faz signOut.
+                    // Apenas mostra a tela de login para permitir a troca de conta.
+                    // signOut(auth); // <--- REMOVIDO para evitar loop
                     showLoginScreen();
                 }
             } else {
@@ -89,15 +96,17 @@
 
             try {
                 await signInWithEmailAndPassword(auth, email, pass);
+                // Salva flag para impedir que o script de teste sobrescreva a sessão
+                localStorage.setItem('adminLoggedIn', 'true');
             } catch (error) {
                 console.error("Erro login:", error);
                 let msg = "Erro ao entrar. Verifique email e senha.";
                 
-                // Fallback para criar admin na primeira vez (apenas se for o email correto)
                 if(error.code === 'auth/user-not-found' && email === ADMIN_EMAIL_PERMITIDO) {
                     if(confirm("Conta Admin não existe. Deseja criar agora?")) {
                         try {
                             await createUserWithEmailAndPassword(auth, email, pass);
+                            localStorage.setItem('adminLoggedIn', 'true');
                             alert("Admin criado! Pode entrar.");
                             return;
                         } catch(err) { msg = "Erro ao criar: " + err.message; }
@@ -112,6 +121,7 @@
         };
 
         window.handleLogout = () => {
+            localStorage.removeItem('adminLoggedIn'); // Limpa a flag
             signOut(auth);
             window.location.reload();
         };
@@ -134,7 +144,6 @@
             onSnapshot(qLessons, (snapshot) => {
                 globalLessons = [];
                 snapshot.forEach(doc => globalLessons.push({id: doc.id, ...doc.data()}));
-                // Ordenar aulas (mais novas por último geralmente, ou por data)
                 globalLessons.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
                 
                 updateDashboardStats();
@@ -147,7 +156,6 @@
             onSnapshot(qStudents, (snapshot) => {
                 globalStudents = [];
                 snapshot.forEach(doc => globalStudents.push({id: doc.id, ...doc.data()}));
-                // Ordenar alunos (mais novos primeiro)
                 globalStudents.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                 
                 updateDashboardStats();
@@ -238,8 +246,6 @@
         }
 
         // --- AÇÕES DO SISTEMA ---
-
-        // 1. DELETAR (Genérico)
         window.deleteDocById = async (col, id) => {
             const msg = col === 'students' 
                 ? "Tem certeza? Isso removerá o aluno da lista do site, mas a conta de login pode permanecer no sistema do Google. Deseja continuar?" 
@@ -248,14 +254,11 @@
             if(confirm(msg)) {
                 try { 
                     await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id)); 
-                    // Se for student, apenas remove o documento do Firestore.
-                    // O Auth User (Login) não pode ser deletado pelo Client SDK sem deslogar o admin.
                 } 
                 catch(e) { alert("Erro ao deletar: " + e.message); }
             }
         }
 
-        // 2. CRIAR ALUNO E ENVIAR EMAIL (Inteligente)
         window.handleCreateStudent = async (e) => {
             e.preventDefault();
             const email = document.getElementById('sale-email').value;
@@ -268,45 +271,33 @@
             resultDiv.innerHTML = "";
 
             try {
-                // MODO 1: Se tiver URL do Webhook, tenta enviar e-mail real
                 if (CLOUD_FUNCTION_URL) {
                     btn.innerText = "ENVIANDO WEBHOOK...";
-                    
                     const response = await fetch(CLOUD_FUNCTION_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             client: { name: name, email: email },
-                            event: "purchase_approved" // Simula evento da Hotmart/Cakto
+                            event: "purchase_approved"
                         })
                     });
-
                     if (response.ok) {
-                        resultDiv.innerHTML = `
-                            <div class="bg-green-100 p-3 border-2 border-green-500 text-sm mt-4 rounded shadow-sm">
-                                <strong class="text-green-800">✅ E-mail Disparado!</strong>
-                                <p class="text-xs text-green-700 mt-1">O servidor processou o cadastro e enviou o acesso para <em>${email}</em>.</p>
-                            </div>
-                        `;
+                        resultDiv.innerHTML = `<div class="bg-green-100 p-3 border-2 border-green-500 text-sm mt-4 rounded shadow-sm"><strong class="text-green-800">✅ E-mail Disparado!</strong></div>`;
                     } else {
                         throw new Error("Erro no servidor: " + await response.text());
                     }
 
                 } else {
-                    // MODO 2: Criação Local (Fallback se não configurar URL)
                     btn.innerText = "CRIANDO LOCAL...";
-                    
                     const tempPass = Math.random().toString(36).slice(-8) + "Aa1";
                     
-                    // Truque: App Secundário para não deslogar
+                    // Inicializa app secundário para criar usuário sem deslogar o admin
                     const secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
                     const secondaryAuth = getAuth(secondaryApp);
-                    
                     const userCred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPass);
                     const newUid = userCred.user.uid;
-                    await secondaryAuth.signOut(); // Limpa sessão secundária
+                    await signOut(secondaryAuth); // Desloga do app secundário imediatamente
                     
-                    // Salva no banco
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', newUid), {
                         uid: newUid,
                         name: name,
@@ -322,19 +313,14 @@
                                 <p><strong>Login:</strong> ${email}</p>
                                 <p><strong>Senha:</strong> ${tempPass}</p>
                             </div>
-                            <p class="text-xs text-red-600 mt-2 font-bold">O e-mail não foi enviado automaticamente (URL vazia).</p>
-                            <p class="text-xs text-gray-600">Copie e envie os dados acima para o aluno.</p>
                         </div>
                     `;
                 }
-                
                 e.target.reset();
 
             } catch (err) {
                 console.error(err);
-                let msg = err.message;
-                if(err.code === 'auth/email-already-in-use') msg = "Este e-mail já está cadastrado!";
-                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold bg-red-100 p-2 border border-red-200">❌ ${msg}</div>`;
+                resultDiv.innerHTML = `<div class="text-red-500 text-xs mt-2 font-bold bg-red-100 p-2 border border-red-200">❌ ${err.message}</div>`;
             } finally {
                 btn.disabled = false;
                 btn.innerText = "CADASTRAR ALUNO";
@@ -424,14 +410,11 @@
             }
         }
 
-        // --- TEST TOOLS ---
         window.testWebhook = async (e) => {
             e.preventDefault();
-            // Lógica do Webhook (Opcional, se você tiver configurado)
             alert("Função de Webhook disponível se configurada no backend.");
         };
 
-        // --- UI UTILS ---
         window.toggleVideoInput = (type) => {
             document.getElementById('container-url').classList.toggle('hidden', type !== 'url');
             document.getElementById('container-file').classList.toggle('hidden', type !== 'file');

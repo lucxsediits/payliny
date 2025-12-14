@@ -11,7 +11,7 @@
     <!-- Firebase Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // =========================================================================
@@ -73,21 +73,29 @@
 
         // Auth Init
         const initAuth = async () => {
-             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
+             // FIX: Só tenta usar o token de teste se o usuário NÃO tiver logado manualmente.
+             // O "index.html" define 'userLoggedIn' no localStorage.
+             const hasManualLogin = localStorage.getItem('userLoggedIn') === 'true';
+
+             if (!hasManualLogin && typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                // Se não tem login manual, podemos tentar o token do ambiente (para testes rápidos)
+                // Mas NÃO fazemos signInAnonymously como fallback, pois isso deslogaria o usuário real.
+                try {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } catch(e) {}
             }
         };
         initAuth();
 
         onAuthStateChanged(auth, (user) => {
             if (!user) {
+                // Se não tem usuário nenhum, redireciona para login
                 window.location.href = 'index.html';
             } else {
                 currentUser = user;
-                const userName = localStorage.getItem('userName') || 'Aluno';
-                const initials = userName.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
+                // Tenta pegar nome do localStorage se não tiver no user auth (comum em email/password sem updateProfile)
+                const userName = localStorage.getItem('userName') || user.email || 'Aluno';
+                const initials = userName.charAt(0).toUpperCase();
                 document.getElementById('user-avatar').innerText = initials;
                 
                 window.currentUserInfo = {
@@ -526,6 +534,7 @@
 
         window.logout = () => {
             localStorage.removeItem('userLoggedIn');
+            localStorage.removeItem('userName');
             signOut(auth).then(() => window.location.href = 'index.html');
         };
     </script>
