@@ -1,24 +1,18 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const nodemailer = require("nodemailer"); // Para enviar emails (opcional)
+const nodemailer = require("nodemailer");
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// --- CONFIGURAÇÃO DO EMAIL (Opcional) ---
-// Use um email Gmail real ou serviço como SendGrid
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: "akkoacademycontato@gmail.com", // ⚠️ COLOCA O TEU EMAIL
-      pass: "fhhb efdx lzep jzvi",       // ⚠️ COLOCA A SENHA DE APP (Não a senha normal)
+      user: "akkoacademycontato@gmail.com",
+      pass: "fhhb efdx lzep jzvi",
     },
 });
 
-/**
- * 🔗 WEBHOOK: Recebe a venda da Hotmart/Cakto/Kiwify
- * URL para configurar na plataforma: https://us-central1-SEU-PROJETO.cloudfunctions.net/handleNewSale
- */
 exports.handleNewSale = functions.https.onRequest(async (req, res) => {
     try {
         // As plataformas enviam dados de formas diferentes. 
