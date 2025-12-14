@@ -31,11 +31,7 @@
         window.buyLink = "https://pay.cakto.com.br/97fsdky_686786"; 
         
         window.goToCheckout = () => {
-            if(window.buyLink.includes("97fsdky_686786")) {
-                alert("Configure o link da Cakto no código HTML.");
-            } else {
-                window.open(window.buyLink, '_blank');
-            }
+            window.open(window.buyLink, '_blank');
         }
 
         window.handleLogin = async (e) => {
@@ -588,18 +584,18 @@
             <div class="tape tape-tc opacity-50 bg-white/50"></div>
             <button onclick="toggleLoginModal()" class="absolute top-2 right-2 text-doodle-dark hover:scale-110 transition-transform font-bold font-comic text-xl w-8 h-8 flex items-center justify-center border-2 border-transparent hover:border-doodle-dark rounded-full">X</button>
             <div class="text-center mb-8">
-                <h2 id="auth-title" class="font-comic text-5xl text-doodle-dark mb-2">ÁREA VIP</h2>
+                <h2 id="auth-title" class="font-comic text-5xl text-doodle-dark mb-2">ÁREA DOS MEMBROS</h2>
                 <p class="font-marker text-doodle-dark/70 text-sm leading-tight px-4">
                     Utilize o email e a senha enviados para a sua caixa de entrada após a compra.
                 </p>
             </div>
             <form id="auth-form" class="space-y-4" onsubmit="handleLogin(event)">
                 <div>
-                    <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">E-MAIL DA COMPRA</label>
+                    <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">EMAIL</label>
                     <input type="email" id="email" class="w-full bg-white border-2 border-doodle-dark p-3 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow rounded-lg text-lg" required>
                 </div>
                 <div>
-                    <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">SENHA (RECEBIDA)</label>
+                    <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">SENHA</label>
                     <input type="password" id="password" class="w-full bg-white border-2 border-doodle-dark p-3 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow rounded-lg text-lg" required>
                 </div>
                 <button type="submit" class="btn-doodle w-full bg-doodle-pink text-white font-comic text-3xl py-3 mt-4 border-2 border-doodle-dark hover:bg-doodle-purple rounded-lg shadow-hard-sm">
