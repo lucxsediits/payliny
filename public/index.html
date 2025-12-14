@@ -10,7 +10,9 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, setPersistence, browserLocalPersistence, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // IMPORTANTE: Adicionei getFunctions e httpsCallable
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
 
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
@@ -27,6 +29,7 @@
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
+        const functions = getFunctions(app); // Inicializa Functions no Front
 
         // --- SISTEMA DE ALERTAS PERSONALIZADOS ---
         window.showAlert = (title, msg, type = 'info') => {
@@ -37,22 +40,24 @@
             const bgEl = document.getElementById('alert-box');
 
             titleEl.innerText = title;
-            msgEl.innerHTML = msg; // Permite HTML para quebras de linha
+            msgEl.innerHTML = msg; 
             
-            // Estilos baseados no tipo
+            // Reset classes
+            bgEl.className = "bg-white border-4 border-doodle-dark p-6 max-w-sm w-full transform relative transition-all";
+            
             if (type === 'error') {
                 titleEl.className = "font-comic text-4xl mb-2 text-red-600";
-                bgEl.className = "bg-white border-4 border-doodle-dark shadow-[10px_10px_0px_#EF4444] p-6 max-w-sm w-full transform -rotate-1 relative transition-all";
+                bgEl.classList.add("shadow-[10px_10px_0px_#EF4444]", "-rotate-1");
                 iconEl.setAttribute('data-lucide', 'alert-triangle');
                 iconEl.className = "w-10 h-10 text-red-600 absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-12";
             } else if (type === 'success') {
                 titleEl.className = "font-comic text-4xl mb-2 text-doodle-green";
-                bgEl.className = "bg-white border-4 border-doodle-dark shadow-[10px_10px_0px_#89F279] p-6 max-w-sm w-full transform rotate-1 relative transition-all";
+                bgEl.classList.add("shadow-[10px_10px_0px_#89F279]", "rotate-1");
                 iconEl.setAttribute('data-lucide', 'check-circle-2');
                 iconEl.className = "w-10 h-10 text-doodle-green absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform rotate-12";
             } else {
                 titleEl.className = "font-comic text-4xl mb-2 text-doodle-dark";
-                bgEl.className = "bg-white border-4 border-doodle-dark shadow-[10px_10px_0px_#2D2B38] p-6 max-w-sm w-full transform rotate-1 relative transition-all";
+                bgEl.classList.add("shadow-[10px_10px_0px_#2D2B38]", "rotate-1");
                 iconEl.setAttribute('data-lucide', 'info');
                 iconEl.className = "w-10 h-10 text-doodle-purple absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-6";
             }
@@ -69,7 +74,7 @@
 
         // --- LÓGICA DE LOGIN ---
         window.handleLogin = async (e) => {
-            e.preventDefault();
+            e.preventDefault(); // Impede recarregar a página
             const email = document.getElementById('email').value;
             const password = document.getElementById('password').value;
             const btn = document.getElementById('btn-login-submit');
@@ -98,9 +103,9 @@
             }
         }
 
-        // --- LÓGICA DE RECUPERAÇÃO DE SENHA ---
+        // --- LÓGICA DE RECUPERAÇÃO (MODIFICADA PARA USAR CLOUD FUNCTION) ---
         window.handleRecovery = async (e) => {
-            e.preventDefault();
+            e.preventDefault(); // CRUCIAL: Impede o refresh
             const email = document.getElementById('recovery-email').value;
             const btn = document.getElementById('btn-recovery-submit');
 
@@ -113,14 +118,22 @@
             btn.disabled = true;
 
             try {
-                await sendPasswordResetEmail(auth, email);
-                window.showAlert("ENVIADO!", `Um link de redefinição foi enviado para <b>${email}</b>.<br>Verifique sua caixa de entrada e SPAM.`, 'success');
-                switchView('login'); // Volta pro login
-                document.getElementById('recovery-email').value = "";
+                // Chama a função estilosa do Backend
+                const sendFunc = httpsCallable(functions, 'sendCustomRecoveryEmail');
+                await sendFunc({ email: email });
+
+                window.showAlert("EMAIL ENVIADO!", `Enviamos um link estiloso para <b>${email}</b>.<br>Verifique a caixa de entrada e SPAM.`, 'success');
+                
+                // Volta para a tela de login após 3 segundos
+                setTimeout(() => {
+                    switchView('login');
+                    document.getElementById('recovery-email').value = "";
+                }, 3000);
+
             } catch (error) {
                 console.error(error);
-                let msg = "Erro ao enviar email.";
-                if (error.code === 'auth/user-not-found') msg = "Este email não está cadastrado em nossa base.";
+                let msg = error.message;
+                if (msg.includes('not-found') || error.code === 'not-found') msg = "Este email não é aluno da Akko.";
                 window.showAlert("ERRO", msg, 'error');
             } finally {
                 btn.innerText = "ENVIAR LINK DE RECUPERAÇÃO";
@@ -199,7 +212,7 @@
 </head>
 <body class="font-sans antialiased selection:bg-doodle-pink selection:text-white">
 
-    <!-- ALERTA PERSONALIZADO (POPUP) -->
+    <!-- CUSTOM ALERT POPUP -->
     <div id="custom-alert" class="fixed inset-0 z-[200] hidden items-center justify-center bg-black/60 backdrop-blur-sm transition-opacity">
         <div id="alert-box" class="bg-white border-4 border-doodle-dark shadow-[10px_10px_0px_#2D2B38] p-6 max-w-sm w-full transform rotate-1 relative transition-all">
             <i id="alert-icon" data-lucide="info" class="w-10 h-10 text-doodle-purple absolute -top-5 -left-5 bg-white border-2 border-doodle-dark rounded-full p-1 transform -rotate-6"></i>
