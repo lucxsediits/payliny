@@ -10,7 +10,7 @@
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         const manualConfig = {
           apiKey: "AIzaSyAr13YDQhGCvsbuWp3RpPH0jzpm5_MyHww",
@@ -28,19 +28,11 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                if(!localStorage.getItem('userName')) {
-                    localStorage.setItem('userName', 'Aluno');
-                }
-            }
-        });
-
         window.buyLink = "https://pay.cakto.com.br/97fsdky_686786"; 
         
         window.goToCheckout = () => {
             if(window.buyLink.includes("SEU-CODIGO-AQUI")) {
-                alert("Configure o link da Cakto no código HTML (linha 48).");
+                alert("Configure o link da Cakto no código HTML.");
             } else {
                 window.open(window.buyLink, '_blank');
             }
@@ -55,24 +47,41 @@
 
             if (email && password) {
                 btn.innerText = 'ENTRANDO...';
+                btn.disabled = true;
                 try {
                     await signInWithEmailAndPassword(auth, email, password);
                     localStorage.setItem('userLoggedIn', 'true');
-                    window.location.href = 'membros.html';
+                    window.location.href = 'membros.html'; // Redireciona para área de membros
                 } catch (error) {
                     console.error(error);
                     let message = "Credenciais inválidas.";
-                    if (error.code === 'auth/user-not-found') message = "Aluno não encontrado.";
+                    if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') message = "Email ou senha incorretos.";
                     if (error.code === 'auth/wrong-password') message = "Senha incorreta.";
+                    if (error.code === 'auth/too-many-requests') message = "Muitas tentativas. Tente mais tarde.";
                     
                     errorMsg.innerText = message;
                     errorMsg.classList.remove('hidden');
                     btn.innerText = 'ENTRAR';
+                    btn.disabled = false;
                 }
             } else {
+                errorMsg.innerText = "Preencha todos os campos.";
                 errorMsg.classList.remove('hidden');
             }
         }
+
+        // Animação de Scroll (Reveal)
+        document.addEventListener('DOMContentLoaded', () => {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if(entry.isIntersecting) {
+                        entry.target.classList.add('active');
+                    }
+                });
+            }, { threshold: 0.1 });
+            
+            document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+        });
     </script>
 
     <script>
@@ -102,16 +111,18 @@
                     animation: {
                         'wiggle': 'wiggle 3s ease-in-out infinite',
                         'float': 'float 6s ease-in-out infinite',
+                        'float-fast': 'float 4s ease-in-out infinite',
                         'scroll-text': 'scrollText 30s linear infinite',
+                        'spin-slow': 'spin 8s linear infinite',
                     },
                     keyframes: {
                         wiggle: {
-                            '0%, 100%': { transform: 'rotate(-2deg)' },
-                            '50%': { transform: 'rotate(2deg)' },
+                            '0%, 100%': { transform: 'rotate(-3deg)' },
+                            '50%': { transform: 'rotate(3deg)' },
                         },
                         float: {
                             '0%, 100%': { transform: 'translateY(0)' },
-                            '50%': { transform: 'translateY(-10px)' },
+                            '50%': { transform: 'translateY(-15px)' },
                         },
                         scrollText: {
                             '0%': { transform: 'translateX(0)' },
@@ -131,270 +142,348 @@
         }
         .tape {
             position: absolute;
-            height: 30px;
-            width: 100px;
-            background-color: #F2E058;
-            opacity: 0.9;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            height: 35px;
+            width: 110px;
+            background-color: rgba(242, 224, 88, 0.9);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             z-index: 20;
+            backdrop-filter: blur(2px);
         }
-        .tape-tc { top: -15px; left: 50%; transform: translateX(-50%) rotate(2deg); width: 120px; }
-        .tape-tl { top: -10px; left: -25px; transform: rotate(-30deg); }
-        .tape-tr { top: -10px; right: -25px; transform: rotate(30deg); }
+        .tape-tc { top: -18px; left: 50%; transform: translateX(-50%) rotate(2deg); }
+        .tape-tl { top: -12px; left: -30px; transform: rotate(-35deg); }
+        .tape-tr { top: -12px; right: -30px; transform: rotate(35deg); }
         
         .btn-doodle {
             border: 3px solid #2D2B38;
             box-shadow: 4px 4px 0px #2D2B38;
-            transition: all 0.1s;
+            transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         .btn-doodle:hover {
-            transform: translate(-2px, -2px);
-            box-shadow: 6px 6px 0px #2D2B38;
+            transform: translate(-3px, -3px) rotate(-1deg);
+            box-shadow: 8px 8px 0px #2D2B38;
         }
         .btn-doodle:active {
             transform: translate(2px, 2px);
             box-shadow: 0px 0px 0px #2D2B38;
         }
-        .modal { transition: opacity 0.3s ease, visibility 0.3s ease; opacity: 0; visibility: hidden; pointer-events: none; }
+        
+        /* Reveal Animation */
+        .reveal { 
+            opacity: 0; 
+            transform: translateY(40px) scale(0.95); 
+            transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1); 
+        }
+        .reveal.active { 
+            opacity: 1; 
+            transform: translateY(0) scale(1); 
+        }
+
+        /* Modal Styles */
+        .modal { transition: all 0.3s ease; opacity: 0; visibility: hidden; pointer-events: none; }
         .modal.active { opacity: 1; visibility: visible; pointer-events: auto; }
+        .modal-content { transform: scale(0.8) rotate(-5deg); transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .modal.active .modal-content { transform: scale(1) rotate(0deg); }
     </style>
 </head>
-<body class="font-sans">
+<body class="font-sans antialiased selection:bg-doodle-pink selection:text-white">
 
-    <nav class="fixed w-full z-50 px-4 py-4 top-0">
-        <div class="max-w-6xl mx-auto bg-white border-2 border-doodle-dark shadow-hard rounded-lg px-4 py-3 flex justify-between items-center transform -rotate-1 hover:rotate-0 transition-transform duration-300">
-            <div class="flex items-center gap-2 font-comic text-3xl tracking-wide text-doodle-dark">
-                <span class="text-doodle-pink relative">★<span class="absolute top-0 left-1 text-doodle-yellow -z-10 translate-x-1 translate-y-1">★</span></span>
+    <!-- NAV -->
+    <nav class="fixed w-full z-50 px-4 py-4 top-0 pointer-events-none">
+        <div class="pointer-events-auto max-w-6xl mx-auto bg-white/95 backdrop-blur-sm border-2 border-doodle-dark shadow-hard rounded-xl px-4 py-3 flex justify-between items-center transform -rotate-1 hover:rotate-0 transition-transform duration-300">
+            <div class="flex items-center gap-2 font-comic text-3xl tracking-wide text-doodle-dark group cursor-default">
+                <span class="text-doodle-pink relative group-hover:animate-spin-slow inline-block">★<span class="absolute top-0 left-1 text-doodle-yellow -z-10 translate-x-1 translate-y-1">★</span></span>
                 AKKO<span class="text-doodle-purple">ACADEMY</span>
             </div>
             
-            <div class="hidden md:flex gap-6 font-marker text-lg text-doodle-dark/80 rotate-1">
-                <a href="#metodo" class="hover:text-doodle-pink hover:scale-110 transition-all decoration-doodle-green underline decoration-wavy">Método</a>
-                <a href="#mentor" class="hover:text-doodle-pink hover:scale-110 transition-all decoration-doodle-yellow underline decoration-wavy">Equipe</a>
-                <a href="#modulos" class="hover:text-doodle-pink hover:scale-110 transition-all decoration-doodle-purple underline decoration-wavy">Conteúdo</a>
+            <div class="hidden md:flex gap-8 font-marker text-lg text-doodle-dark/80 rotate-1">
+                <a href="#metodo" class="hover:text-doodle-pink hover:scale-110 transition-all decoration-doodle-green underline decoration-wavy underline-offset-4">Método</a>
+                <a href="#mentor" class="hover:text-doodle-pink hover:scale-110 transition-all decoration-doodle-yellow underline decoration-wavy underline-offset-4">Equipe</a>
+                <a href="#modulos" class="hover:text-doodle-pink hover:scale-110 transition-all decoration-doodle-purple underline decoration-wavy underline-offset-4">Conteúdo</a>
             </div>
 
-            <button id="nav-login-btn" onclick="toggleLoginModal()" class="bg-doodle-pink text-white font-comic text-xl px-6 py-1 rounded border-2 border-doodle-dark shadow-hard-sm hover:bg-doodle-purple transition-colors transform hover:-rotate-2">
+            <button id="nav-login-btn" onclick="toggleLoginModal()" class="bg-doodle-pink text-white font-comic text-xl px-6 py-1 rounded-lg border-2 border-doodle-dark shadow-hard-sm hover:bg-doodle-purple transition-all transform hover:-rotate-2 hover:scale-105 active:scale-95">
                 ÁREA DE MEMBROS
             </button>
         </div>
     </nav>
 
+    <!-- HERO SECTION -->
     <section class="relative pt-40 pb-20 overflow-hidden min-h-screen flex flex-col justify-center">
-        <div class="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-            <svg class="absolute top-32 left-10 w-32 h-32 text-doodle-pink animate-wiggle opacity-80" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M10 50 Q 25 25 40 50 T 70 50 T 100 50" /></svg>
+        <!-- Background Elements -->
+        <div class="absolute inset-0 pointer-events-none z-0">
+            <svg class="absolute top-32 left-10 w-40 h-40 text-doodle-pink animate-wiggle opacity-60" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><path d="M10 50 Q 25 25 40 50 T 70 50 T 100 50" /></svg>
+            <svg class="absolute bottom-20 right-10 w-32 h-32 text-doodle-purple animate-float opacity-60" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="3"><circle cx="50" cy="50" r="40" stroke-dasharray="10 5"/></svg>
             <svg class="absolute top-40 right-20 w-24 h-24 text-doodle-green animate-spin-slow opacity-80" viewBox="0 0 100 100" fill="currentColor"><path d="M50 0 L61 35 L98 35 L68 57 L79 91 L50 70 L21 91 L32 57 L2 35 L39 35 Z" stroke="#2D2B38" stroke-width="3"/></svg>
+            <!-- Scribbles -->
+            <svg class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] opacity-5 z-0" viewBox="0 0 200 200"><path d="M10,10 Q50,100 90,10 T180,100" fill="none" stroke="black" stroke-width="1"/></svg>
         </div>
 
         <div class="max-w-6xl mx-auto px-4 relative z-10 grid md:grid-cols-2 gap-12 items-center">
-            <div class="text-left relative">
-                <div class="inline-block bg-doodle-pink border-2 border-doodle-dark p-1 shadow-hard transform -rotate-3 mb-6">
+            <!-- Left Text -->
+            <div class="text-left relative reveal">
+                <div class="inline-block bg-doodle-pink border-2 border-doodle-dark p-1 shadow-hard transform -rotate-3 mb-8 hover:rotate-2 transition-transform duration-300">
                     <div class="border border-white border-dashed p-2">
-                        <span class="font-marker text-white text-xl"># VAGAS ABERTAS</span>
+                        <span class="font-marker text-white text-xl">🔥 VAGAS ABERTAS</span>
                     </div>
                 </div>
 
-                <h1 class="font-comic text-7xl md:text-8xl text-doodle-dark leading-[0.85] mb-6 drop-shadow-sm">
+                <h1 class="font-comic text-7xl md:text-9xl text-doodle-dark leading-[0.85] mb-8 drop-shadow-sm relative">
                     VIRE UM <br>
-                    <span class="text-white text-stroke-dark relative inline-block transform rotate-2">
-                        <span class="absolute inset-0 bg-doodle-purple -z-10 transform translate-x-2 translate-y-2 border-2 border-doodle-dark"></span>
+                    <span class="text-white text-stroke-dark relative inline-block transform rotate-2 hover:-rotate-1 transition-transform cursor-default">
+                        <span class="absolute inset-0 bg-doodle-purple -z-10 transform translate-x-3 translate-y-3 border-3 border-doodle-dark"></span>
                         EDITOR PRO
                     </span>
                 </h1>
 
-                <p class="font-marker text-2xl text-doodle-dark/80 mb-8 transform -rotate-1 max-w-md">
-                    <span class="text-doodle-pink">😎</span> Os Criadores Do Estilo Mais Elegante Do Youtube!
+                <p class="font-marker text-2xl text-doodle-dark/80 mb-10 transform -rotate-1 max-w-md ml-2 border-l-4 border-doodle-yellow pl-4">
+                    😎 Os Criadores Do Estilo Mais <span class="bg-doodle-green px-1">Elegante</span> Do Youtube!
                 </p>
 
-                <div class="flex flex-col sm:flex-row gap-4">
-                    <button onclick="goToCheckout()" class="btn-doodle bg-doodle-green text-doodle-dark font-comic text-2xl px-8 py-4 rounded hover:bg-white flex items-center justify-center gap-2 transform -rotate-1">
-                        QUERO COMEÇAR
-                        <i data-lucide="arrow-right" class="w-6 h-6 border-2 border-doodle-dark rounded-full p-0.5"></i>
+                <div class="relative inline-block">
+                    <!-- Seta desenhada -->
+                    <svg class="absolute -right-24 -top-10 w-24 h-24 text-doodle-dark transform rotate-12 animate-float pointer-events-none hidden md:block" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10,10 Q50,50 20,80" />
+                        <path d="M10,70 L20,80 L35,65" />
+                    </svg>
+
+                    <button onclick="goToCheckout()" class="btn-doodle bg-doodle-green text-doodle-dark font-comic text-3xl px-10 py-5 rounded-xl hover:bg-white flex items-center justify-center gap-3 transform -rotate-1 relative overflow-hidden group">
+                        <span class="relative z-10">QUERO COMEÇAR</span>
+                        <i data-lucide="arrow-right" class="w-8 h-8 border-2 border-doodle-dark rounded-full p-1 bg-white relative z-10 group-hover:translate-x-1 transition-transform"></i>
                     </button>
                 </div>
             </div>
 
-            <div class="relative group">
-                <div class="tape tape-tc z-30"></div>
-                <div class="bg-white p-4 border-4 border-doodle-dark shadow-[15px_15px_0px_#FF66C4] transform rotate-3 group-hover:rotate-1 transition-all duration-300 relative z-20">
-                    <div class="bg-doodle-dark aspect-video w-full relative overflow-hidden border-2 border-doodle-dark">
-                        <img src="https://images.unsplash.com/photo-1536240478700-b869070f9279?q=80&w=2600&auto=format&fit=crop" class="w-full h-full object-cover opacity-90 mix-blend-luminosity hover:mix-blend-normal transition-all" alt="Interface">
-                        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 group-hover:scale-110 transition-transform cursor-pointer">
-                            <svg width="80" height="80" viewBox="0 0 100 100">
-                                <circle cx="50" cy="50" r="45" fill="#F2E058" stroke="#2D2B38" stroke-width="4"/>
-                                <path d="M35 30 L75 50 L35 70 Z" fill="#2D2B38"/>
-                            </svg>
+            <!-- Right Image/Video -->
+            <div class="relative group reveal delay-200">
+                <div class="tape tape-tc z-30 group-hover:rotate-1 transition-transform"></div>
+                <div class="bg-white p-4 border-4 border-doodle-dark shadow-[15px_15px_0px_#FF66C4] transform rotate-3 group-hover:rotate-1 group-hover:scale-[1.02] transition-all duration-300 relative z-20">
+                    <div class="bg-doodle-dark aspect-video w-full relative overflow-hidden border-2 border-doodle-dark group">
+                        <img src="https://images.unsplash.com/photo-1536240478700-b869070f9279?q=80&w=2600&auto=format&fit=crop" class="w-full h-full object-cover opacity-80 mix-blend-luminosity group-hover:opacity-100 group-hover:mix-blend-normal group-hover:scale-105 transition-all duration-700" alt="Interface">
+                        <!-- Play Button Overlay -->
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <div class="bg-doodle-yellow w-20 h-20 rounded-full border-4 border-doodle-dark flex items-center justify-center shadow-hard cursor-pointer hover:scale-110 transition-transform">
+                                <i data-lucide="play" class="w-10 h-10 fill-doodle-dark ml-1"></i>
+                            </div>
                         </div>
                     </div>
                     <div class="mt-4 flex justify-between items-end font-marker">
                         <div>
-                            <p class="text-xs text-gray-500">PROJECT FILE:</p>
+                            <p class="text-xs text-gray-500 font-bold tracking-widest">PROJECT FILE:</p>
                             <h3 class="text-2xl text-doodle-purple">payline_e_doido.aep</h3>
                         </div>
-                        <div class="text-doodle-pink text-3xl animate-pulse">● REC</div>
+                        <div class="text-doodle-pink text-3xl animate-pulse flex items-center gap-2">
+                            <span class="w-4 h-4 bg-doodle-pink rounded-full block"></span> REC
+                        </div>
                     </div>
                 </div>
+                <!-- Elemento decorativo atrás -->
+                <div class="absolute -bottom-10 -right-10 w-full h-full border-4 border-doodle-dark border-dashed rounded-lg -z-10 transform rotate-6"></div>
             </div>
         </div>
     </section>
 
-    <div class="bg-doodle-yellow border-y-4 border-doodle-dark py-3 transform -rotate-1 scale-105 shadow-md relative z-20 overflow-hidden flex">
-        <div class="flex gap-8 animate-scroll-text whitespace-nowrap font-comic text-3xl text-doodle-dark items-center flex-shrink-0 min-w-full justify-around px-8">
-            <span>⚡ EDIT TIMING</span><span>★ PREMIERE PRO</span><span>⚡ AFTER EFFECTS</span><span>★ COLOR GRADING</span><span>⚡ SOUND DESIGN</span>
+    <!-- SCROLLING BANNER -->
+    <div class="bg-doodle-yellow border-y-4 border-doodle-dark py-4 transform -rotate-1 scale-[1.02] shadow-md relative z-20 overflow-hidden flex">
+        <div class="flex gap-12 animate-scroll-text whitespace-nowrap font-comic text-4xl text-doodle-dark items-center flex-shrink-0 min-w-full px-8">
             <span>⚡ EDIT TIMING</span><span>★ PREMIERE PRO</span><span>⚡ AFTER EFFECTS</span><span>★ COLOR GRADING</span><span>⚡ SOUND DESIGN</span>
             <span>⚡ EDIT TIMING</span><span>★ PREMIERE PRO</span><span>⚡ AFTER EFFECTS</span><span>★ COLOR GRADING</span><span>⚡ SOUND DESIGN</span>
         </div>
-        <div class="flex gap-8 animate-scroll-text whitespace-nowrap font-comic text-3xl text-doodle-dark items-center flex-shrink-0 min-w-full justify-around px-8" aria-hidden="true">
-            <span>⚡ EDIT TIMING</span><span>★ PREMIERE PRO</span><span>⚡ AFTER EFFECTS</span><span>★ COLOR GRADING</span><span>⚡ SOUND DESIGN</span>
+        <div class="flex gap-12 animate-scroll-text whitespace-nowrap font-comic text-4xl text-doodle-dark items-center flex-shrink-0 min-w-full px-8" aria-hidden="true">
             <span>⚡ EDIT TIMING</span><span>★ PREMIERE PRO</span><span>⚡ AFTER EFFECTS</span><span>★ COLOR GRADING</span><span>⚡ SOUND DESIGN</span>
             <span>⚡ EDIT TIMING</span><span>★ PREMIERE PRO</span><span>⚡ AFTER EFFECTS</span><span>★ COLOR GRADING</span><span>⚡ SOUND DESIGN</span>
         </div>
     </div>
 
-    <section id="mentor" class="py-24 bg-doodle-purple relative border-t-4 border-doodle-dark">
+    <!-- MENTOR SECTION -->
+    <section id="mentor" class="py-24 bg-doodle-purple relative border-t-4 border-doodle-dark overflow-hidden">
         <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#fff 2px, transparent 2px); background-size: 20px 20px;"></div>
+        
+        <!-- Big Scribble -->
+        <svg class="absolute -right-20 top-20 w-96 h-96 text-white opacity-5 pointer-events-none animate-wiggle" viewBox="0 0 200 200"><circle cx="100" cy="100" r="80" fill="none" stroke="currentColor" stroke-width="10" stroke-dasharray="20"/></svg>
 
         <div class="max-w-6xl mx-auto px-4 relative z-10">
-            <h2 class="font-comic text-6xl text-white text-center mb-16 text-shadow-hard transform -rotate-2">
-                A EQUIPE
+            <h2 class="font-comic text-7xl text-white text-center mb-20 text-shadow-hard transform -rotate-2 reveal">
+                A EQUIPE <span class="text-doodle-yellow">BRABA</span>
             </h2>
 
-            <div class="grid md:grid-cols-3 gap-8">
-                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform rotate-2 relative group hover:-translate-y-2 transition-transform">
+            <div class="grid md:grid-cols-3 gap-10 px-4">
+                <!-- Card 1 -->
+                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform rotate-2 relative group hover:-translate-y-4 hover:rotate-0 transition-all duration-300 reveal delay-100">
                     <div class="tape tape-tc"></div>
-                    <div class="aspect-square bg-gray-200 mb-4 border-2 border-doodle-dark overflow-hidden relative">
-                        <img src="https://ui-avatars.com/api/?name=Payliny&background=6C5DD3&color=fff&size=256" class="w-full h-full object-cover">
+                    <div class="aspect-square bg-gray-200 mb-6 border-2 border-doodle-dark overflow-hidden relative group-hover:shadow-inner">
+                        <img src="https://ui-avatars.com/api/?name=Payliny&background=6C5DD3&color=fff&size=512&font-size=0.33" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
                     </div>
-                    <h3 class="font-comic text-3xl text-doodle-dark">Payliny</h3>
-                    <p class="font-marker text-doodle-purple">Camera</p>
-                    <div class="absolute bottom-4 right-4 transform rotate-6 bg-doodle-green px-3 py-1 border-2 border-doodle-dark shadow-sm">
-                        <span class="font-bold font-comic text-doodle-dark">EDITOR MMV</span>
+                    <h3 class="font-comic text-4xl text-doodle-dark mb-1">Payliny</h3>
+                    <p class="font-marker text-xl text-doodle-purple">Camera & Direção</p>
+                    <div class="absolute -bottom-5 -right-5 transform rotate-6 bg-doodle-green px-4 py-2 border-2 border-doodle-dark shadow-sm group-hover:scale-110 transition-transform">
+                        <span class="font-bold font-comic text-xl text-doodle-dark">EDITOR MMV</span>
                     </div>
                 </div>
 
-                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform -rotate-1 relative group hover:-translate-y-2 transition-transform z-10">
+                <!-- Card 2 -->
+                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform -rotate-1 relative group hover:-translate-y-4 hover:rotate-0 transition-all duration-300 z-10 reveal delay-200">
                     <div class="tape tape-tr bg-doodle-pink"></div>
-                    <div class="aspect-square bg-gray-200 mb-4 border-2 border-doodle-dark overflow-hidden">
-                         <img src="https://ui-avatars.com/api/?name=Scroll&background=FF66C4&color=fff&size=256" class="w-full h-full object-cover">
+                    <div class="aspect-square bg-gray-200 mb-6 border-2 border-doodle-dark overflow-hidden">
+                         <img src="https://ui-avatars.com/api/?name=Scroll&background=FF66C4&color=fff&size=512&font-size=0.33" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
                     </div>
-                    <h3 class="font-comic text-3xl text-doodle-dark">Scroll</h3>
-                    <p class="font-marker text-doodle-pink">Composicao</p>
-                     <div class="absolute bottom-4 right-4 transform -rotate-3 bg-doodle-yellow px-3 py-1 border-2 border-doodle-dark shadow-sm">
-                        <span class="font-bold font-comic text-doodle-dark">EDITOR MMV</span>
+                    <h3 class="font-comic text-4xl text-doodle-dark mb-1">Scroll</h3>
+                    <p class="font-marker text-xl text-doodle-pink">Composição VFX</p>
+                     <div class="absolute -bottom-5 -right-5 transform -rotate-3 bg-doodle-yellow px-4 py-2 border-2 border-doodle-dark shadow-sm group-hover:scale-110 transition-transform">
+                        <span class="font-bold font-comic text-xl text-doodle-dark">EDITOR MMV</span>
                     </div>
                 </div>
 
-                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform rotate-3 relative group hover:-translate-y-2 transition-transform">
+                <!-- Card 3 -->
+                <div class="bg-white p-6 pb-12 border-4 border-doodle-dark shadow-hard transform rotate-3 relative group hover:-translate-y-4 hover:rotate-0 transition-all duration-300 reveal delay-300">
                     <div class="tape tape-tl bg-doodle-green"></div>
-                    <div class="aspect-square bg-gray-200 mb-4 border-2 border-doodle-dark overflow-hidden">
-                         <img src="https://ui-avatars.com/api/?name=Sender&background=89F279&color=2D2B38&size=256" class="w-full h-full object-cover">
+                    <div class="aspect-square bg-gray-200 mb-6 border-2 border-doodle-dark overflow-hidden">
+                         <img src="https://ui-avatars.com/api/?name=Sender&background=89F279&color=2D2B38&size=512&font-size=0.33" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
                     </div>
-                    <h3 class="font-comic text-3xl text-doodle-dark">Sender</h3>
-                    <p class="font-marker text-doodle-green">Correcao De Cor</p>
-                     <div class="absolute bottom-4 right-4 transform rotate-2 bg-doodle-pink px-3 py-1 border-2 border-doodle-dark shadow-sm">
-                        <span class="font-bold font-comic text-doodle-dark">EDITOR MMV</span>
+                    <h3 class="font-comic text-4xl text-doodle-dark mb-1">Sender</h3>
+                    <p class="font-marker text-xl text-doodle-green">Color Grading</p>
+                     <div class="absolute -bottom-5 -right-5 transform rotate-2 bg-doodle-pink px-4 py-2 border-2 border-doodle-dark shadow-sm group-hover:scale-110 transition-transform">
+                        <span class="font-bold font-comic text-xl text-doodle-dark">EDITOR MMV</span>
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <section id="modulos" class="py-24 bg-white relative">
+    <!-- MODULES SECTION -->
+    <section id="modulos" class="py-24 bg-white relative overflow-hidden">
+        <!-- Decoration -->
+        <div class="absolute top-10 left-10 w-20 h-20 border-4 border-doodle-dark rounded-full opacity-20 animate-bounce"></div>
+        <div class="absolute bottom-10 right-10 w-20 h-20 bg-doodle-yellow rotate-45 opacity-20"></div>
+
         <div class="max-w-6xl mx-auto px-4 relative z-10">
-            <h2 class="font-comic text-5xl text-doodle-dark mb-12 text-center transform -rotate-1">O QUE VAI APRENDER</h2>
+            <h2 class="font-comic text-6xl text-doodle-dark mb-16 text-center transform -rotate-1 reveal">
+                O QUE VAI APRENDER
+            </h2>
 
-            <div class="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-6 h-auto md:h-[600px]">
-                <div class="md:col-span-2 md:row-span-2 bg-doodle-paper rounded-none p-8 border-4 border-doodle-dark shadow-hard flex flex-col justify-between relative overflow-hidden transform rotate-1 hover:rotate-0 transition-transform">
-                    <div class="tape tape-tc bg-doodle-pink"></div>
-                    <div class="absolute top-0 right-0 p-8 opacity-10">
-                        <i data-lucide="layers" class="w-48 h-48 text-doodle-purple"></i>
+            <div class="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-6 h-auto md:h-[650px]">
+                <!-- Main Module -->
+                <div class="md:col-span-2 md:row-span-2 bg-doodle-paper p-10 border-4 border-doodle-dark shadow-hard flex flex-col justify-between relative overflow-hidden transform rotate-1 hover:rotate-0 transition-all duration-300 group reveal">
+                    <div class="tape tape-tc bg-doodle-pink w-32"></div>
+                    <div class="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <i data-lucide="layers" class="w-64 h-64 text-doodle-purple"></i>
                     </div>
                     <div>
-                        <span class="bg-doodle-yellow text-doodle-dark px-3 py-1 text-xl font-comic border-2 border-doodle-dark shadow-sm">FUNDAMENTOS</span>
-                        <h3 class="font-comic text-4xl text-doodle-dark mt-4 mb-2">EDIÇÃO PRO</h3>
-                        <p class="font-marker text-xl text-gray-600">Do corte bruto à finalização de cinema. Sem enrolação.</p>
+                        <span class="bg-doodle-yellow text-doodle-dark px-4 py-1 text-xl font-comic border-2 border-doodle-dark shadow-sm inline-block transform -rotate-2">FUNDAMENTOS</span>
+                        <h3 class="font-comic text-5xl text-doodle-dark mt-6 mb-4 leading-none">EDIÇÃO PRO<br><span class="text-doodle-purple">COMPLETA</span></h3>
+                        <p class="font-marker text-2xl text-gray-600 max-w-sm">Do corte bruto à finalização de cinema. Sem enrolação. Domine o workflow dos grandes players.</p>
                     </div>
-                    <div class="w-full bg-white h-4 border-2 border-doodle-dark rounded-full overflow-hidden mt-8">
-                        <div class="bg-doodle-green h-full w-2/3 border-r-2 border-doodle-dark"></div>
+                    
+                    <div class="space-y-4 mt-8">
+                        <div class="flex items-center gap-3 font-bold text-gray-700">
+                            <i data-lucide="check-circle-2" class="text-doodle-green w-6 h-6"></i> Organização de Projeto
+                        </div>
+                        <div class="flex items-center gap-3 font-bold text-gray-700">
+                            <i data-lucide="check-circle-2" class="text-doodle-green w-6 h-6"></i> Cortes Dinâmicos
+                        </div>
+                        <div class="flex items-center gap-3 font-bold text-gray-700">
+                            <i data-lucide="check-circle-2" class="text-doodle-green w-6 h-6"></i> Exportação Otimizada
+                        </div>
+                    </div>
+
+                    <div class="w-full bg-white h-6 border-2 border-doodle-dark rounded-full overflow-hidden mt-8 relative">
+                        <div class="bg-doodle-green h-full w-2/3 border-r-2 border-doodle-dark relative overflow-hidden">
+                            <div class="absolute inset-0 bg-white/20 animate-[scrollText_2s_linear_infinite]" style="background-image: repeating-linear-gradient(45deg,transparent,transparent 10px,rgba(0,0,0,0.1) 10px,rgba(0,0,0,0.1) 20px);"></div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="bg-doodle-dark text-white p-6 border-4 border-doodle-dark shadow-hard transform -rotate-2 hover:rotate-0 transition-transform flex flex-col justify-between">
-                    <i data-lucide="palette" class="w-10 h-10 text-doodle-pink mb-4"></i>
-                    <h3 class="font-comic text-2xl">COLOR GRADING</h3>
-                </div>
-
-                <div class="bg-doodle-green p-6 border-4 border-doodle-dark shadow-hard transform rotate-2 hover:rotate-0 transition-transform flex flex-col justify-between">
-                    <i data-lucide="music" class="w-10 h-10 text-doodle-dark mb-4"></i>
-                    <h3 class="font-comic text-2xl text-doodle-dark">SOUND DESIGN</h3>
-                </div>
-
-                <div class="md:col-span-2 bg-doodle-purple p-6 border-4 border-doodle-dark shadow-hard transform -rotate-1 hover:rotate-0 transition-transform flex items-center justify-between text-white">
+                <!-- Small Module 1 -->
+                <div class="bg-doodle-dark text-white p-8 border-4 border-doodle-dark shadow-hard transform -rotate-2 hover:rotate-0 transition-transform flex flex-col justify-between group reveal delay-100 hover:bg-gray-900">
+                    <i data-lucide="palette" class="w-12 h-12 text-doodle-pink mb-4 group-hover:scale-110 transition-transform"></i>
                     <div>
-                        <h3 class="font-comic text-3xl">MERCADO & CARREIRA</h3>
-                        <p class="font-marker text-doodle-yellow mt-1">Como cobrar caro pelos seus vídeos.</p>
+                        <h3 class="font-comic text-3xl mb-2">COLOR GRADING</h3>
+                        <p class="font-marker text-gray-400 text-sm">Aprenda a colorir para passar emoção.</p>
                     </div>
-                    <i data-lucide="dollar-sign" class="w-12 h-12 text-doodle-yellow opacity-80"></i>
+                </div>
+
+                <!-- Small Module 2 -->
+                <div class="bg-doodle-green p-8 border-4 border-doodle-dark shadow-hard transform rotate-2 hover:rotate-0 transition-transform flex flex-col justify-between group reveal delay-200">
+                    <i data-lucide="music" class="w-12 h-12 text-doodle-dark mb-4 group-hover:animate-bounce"></i>
+                    <div>
+                        <h3 class="font-comic text-3xl text-doodle-dark mb-2">SOUND DESIGN</h3>
+                        <p class="font-marker text-doodle-dark/70 text-sm">O segredo de uma edição imersiva.</p>
+                    </div>
+                </div>
+
+                <!-- Wide Module -->
+                <div class="md:col-span-2 bg-doodle-purple p-8 border-4 border-doodle-dark shadow-hard transform -rotate-1 hover:rotate-0 transition-transform flex items-center justify-between text-white reveal delay-300 relative overflow-hidden group">
+                    <div class="relative z-10">
+                        <span class="text-doodle-yellow font-bold text-xs tracking-widest border border-doodle-yellow px-2 py-0.5 rounded mb-2 inline-block">BÔNUS</span>
+                        <h3 class="font-comic text-4xl mb-1">MERCADO & CARREIRA</h3>
+                        <p class="font-marker text-doodle-yellow mt-1 text-lg">Como cobrar caro pelos seus vídeos e fechar contratos.</p>
+                    </div>
+                    <i data-lucide="dollar-sign" class="w-20 h-20 text-doodle-yellow opacity-80 group-hover:scale-125 transition-transform"></i>
+                    <!-- Coin pattern bg -->
+                    <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#F2E058 2px, transparent 2px); background-size: 15px 15px;"></div>
                 </div>
             </div>
         </div>
     </section>
 
+    <!-- TESTIMONIALS -->
     <section class="py-24 bg-doodle-paper border-t-4 border-doodle-dark relative">
         <div class="max-w-6xl mx-auto px-4">
-            <h2 class="font-comic text-5xl text-doodle-dark mb-16 text-center">QUEM JÁ FEZ</h2>
+            <h2 class="font-comic text-6xl text-doodle-dark mb-20 text-center reveal">QUEM JÁ FEZ</h2>
             
-            <div class="grid md:grid-cols-3 gap-8">
-                <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform rotate-1">
-                    <div class="flex gap-1 text-doodle-yellow mb-4">
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
+            <div class="grid md:grid-cols-3 gap-10">
+                <!-- Review 1 -->
+                <div class="bg-white p-8 border-4 border-doodle-dark shadow-hard transform rotate-1 hover:-translate-y-2 transition-transform reveal">
+                    <div class="flex gap-1 text-doodle-yellow mb-6">
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
                     </div>
-                    <p class="font-marker text-gray-600 mb-6">"Melhor curso que já fiz, a didática é direta e os efeitos ensinados são insanos!"</p>
-                    <div class="flex items-center gap-3">
-                        <img src="https://ui-avatars.com/api/?name=User+One&background=2D2B38&color=fff" class="w-10 h-10 rounded-full border-2 border-doodle-dark">
+                    <p class="font-marker text-gray-600 mb-8 text-lg">"Melhor curso que já fiz, a didática é direta e os efeitos ensinados são insanos! Paguei o curso com 1 job."</p>
+                    <div class="flex items-center gap-4 border-t-2 border-gray-100 pt-4">
+                        <img src="https://ui-avatars.com/api/?name=Joao+Silva&background=2D2B38&color=fff" class="w-12 h-12 rounded-full border-2 border-doodle-dark">
                         <div>
                             <p class="font-comic text-xl text-doodle-dark leading-none">João Silva</p>
-                            <p class="text-xs font-sans font-bold text-doodle-purple">Aluno</p>
+                            <p class="text-xs font-sans font-bold text-doodle-purple mt-1">⭐ Aluno Verificado</p>
                         </div>
                     </div>
                 </div>
 
-                <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform -rotate-2 mt-4 md:mt-0">
-                    <div class="flex gap-1 text-doodle-yellow mb-4">
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                <!-- Review 2 -->
+                <div class="bg-white p-8 border-4 border-doodle-dark shadow-hard transform -rotate-2 mt-8 md:mt-0 hover:-translate-y-2 transition-transform reveal delay-100">
+                    <div class="flex gap-1 text-doodle-yellow mb-6">
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
                     </div>
-                    <p class="font-marker text-gray-600 mb-6">"Comecei a pegar clientes pagando 3x mais depois que apliquei as técnicas do módulo 3."</p>
-                    <div class="flex items-center gap-3">
-                        <img src="https://ui-avatars.com/api/?name=User+Two&background=FF66C4&color=fff" class="w-10 h-10 rounded-full border-2 border-doodle-dark">
+                    <p class="font-marker text-gray-600 mb-8 text-lg">"Comecei a pegar clientes pagando 3x mais depois que apliquei as técnicas do módulo 3. Surreal."</p>
+                    <div class="flex items-center gap-4 border-t-2 border-gray-100 pt-4">
+                        <img src="https://ui-avatars.com/api/?name=Maria+E&background=FF66C4&color=fff" class="w-12 h-12 rounded-full border-2 border-doodle-dark">
                         <div>
                             <p class="font-comic text-xl text-doodle-dark leading-none">Maria E.</p>
-                            <p class="text-xs font-sans font-bold text-doodle-purple">Aluna</p>
+                            <p class="text-xs font-sans font-bold text-doodle-purple mt-1">⭐ Aluna Verificada</p>
                         </div>
                     </div>
                 </div>
 
-                <div class="bg-white p-6 border-4 border-doodle-dark shadow-hard transform rotate-1">
-                    <div class="flex gap-1 text-doodle-yellow mb-4">
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
-                        <i data-lucide="star" class="w-5 h-5 fill-current"></i>
+                <!-- Review 3 -->
+                <div class="bg-white p-8 border-4 border-doodle-dark shadow-hard transform rotate-1 hover:-translate-y-2 transition-transform reveal delay-200">
+                    <div class="flex gap-1 text-doodle-yellow mb-6">
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
+                        <i data-lucide="star" class="w-6 h-6 fill-current"></i>
                     </div>
-                    <p class="font-marker text-gray-600 mb-6">"Simplesmente foda. O estilo de edição que ensinam aqui não tem em lugar nenhum."</p>
-                    <div class="flex items-center gap-3">
-                        <img src="https://ui-avatars.com/api/?name=User+Three&background=89F279&color=2D2B38" class="w-10 h-10 rounded-full border-2 border-doodle-dark">
+                    <p class="font-marker text-gray-600 mb-8 text-lg">"Simplesmente foda. O estilo de edição que ensinam aqui não tem em lugar nenhum do BR."</p>
+                    <div class="flex items-center gap-4 border-t-2 border-gray-100 pt-4">
+                        <img src="https://ui-avatars.com/api/?name=Pedro+K&background=89F279&color=2D2B38" class="w-12 h-12 rounded-full border-2 border-doodle-dark">
                         <div>
                             <p class="font-comic text-xl text-doodle-dark leading-none">Pedro K.</p>
-                            <p class="text-xs font-sans font-bold text-doodle-purple">Aluno</p>
+                            <p class="text-xs font-sans font-bold text-doodle-purple mt-1">⭐ Aluno Verificado</p>
                         </div>
                     </div>
                 </div>
@@ -402,87 +491,124 @@
         </div>
     </section>
 
-    <section id="oferta" class="py-24 relative overflow-hidden">
-        <div class="max-w-4xl mx-auto px-4 relative z-10">
-            <div class="bg-white border-4 border-doodle-dark shadow-[20px_20px_0px_#2D2B38] relative transform rotate-1">
-                <div class="bg-doodle-purple border-b-4 border-doodle-dark p-8 text-center relative overflow-hidden">
-                     <div class="absolute top-0 left-0 w-full h-full opacity-20" style="background-image: repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 10px);"></div>
-                    <h2 class="font-comic text-5xl text-white relative z-10">
+    <!-- OFFER SECTION -->
+    <section id="oferta" class="py-32 relative overflow-hidden bg-[#F2E058]">
+        <div class="absolute inset-0 opacity-10" style="background-image: repeating-linear-gradient(45deg, #000 0, #000 2px, transparent 2px, transparent 20px);"></div>
+
+        <div class="max-w-4xl mx-auto px-4 relative z-10 reveal">
+            <div class="bg-white border-4 border-doodle-dark shadow-[25px_25px_0px_#2D2B38] relative transform rotate-1 hover:rotate-0 transition-transform duration-500">
+                <!-- Header -->
+                <div class="bg-doodle-purple border-b-4 border-doodle-dark p-10 text-center relative overflow-hidden">
+                     <div class="absolute top-0 left-0 w-full h-full opacity-20" style="background-image: radial-gradient(#fff 2px, transparent 2px); background-size: 15px 15px;"></div>
+                    <h2 class="font-comic text-6xl text-white relative z-10 animate-float-fast">
                         OFERTA ESPECIAL
                     </h2>
+                    <p class="text-doodle-yellow font-marker mt-2 text-xl">Por tempo limitado!</p>
                 </div>
 
                 <div class="flex flex-col md:flex-row">
-                    <div class="w-full md:w-1/2 p-8 bg-doodle-paper border-b-4 md:border-b-0 md:border-r-4 border-doodle-dark border-dashed">
-                        <h3 class="font-marker text-2xl mb-6 text-doodle-pink transform -rotate-2">ACESSO IMEDIATO:</h3>
-                        <ul class="space-y-4 font-bold text-doodle-dark font-comic text-xl">
-                            <li class="flex items-center gap-3"><div class="w-6 h-6 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-xs">✔</div> Login enviado por E-mail (Cakto)</li>
-                            <li class="flex items-center gap-3"><div class="w-6 h-6 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-xs">✔</div> Pack de Assets Doodle</li>
-                            <li class="flex items-center gap-3"><div class="w-6 h-6 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-xs">✔</div> Certificado Oficial</li>
+                    <!-- Left List -->
+                    <div class="w-full md:w-1/2 p-10 bg-doodle-paper border-b-4 md:border-b-0 md:border-r-4 border-doodle-dark border-dashed flex flex-col justify-center">
+                        <h3 class="font-marker text-3xl mb-8 text-doodle-pink transform -rotate-2">VOCÊ LEVA AGORA:</h3>
+                        <ul class="space-y-6 font-bold text-doodle-dark font-comic text-2xl">
+                            <li class="flex items-center gap-4">
+                                <div class="w-8 h-8 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-sm shadow-sm">✔</div> 
+                                Acesso Vitalício
+                            </li>
+                            <li class="flex items-center gap-4">
+                                <div class="w-8 h-8 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-sm shadow-sm">✔</div> 
+                                Pack de Assets Doodle
+                            </li>
+                            <li class="flex items-center gap-4">
+                                <div class="w-8 h-8 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-sm shadow-sm">✔</div> 
+                                Certificado Oficial
+                            </li>
+                            <li class="flex items-center gap-4">
+                                <div class="w-8 h-8 bg-doodle-green border-2 border-doodle-dark rounded-full flex items-center justify-center text-sm shadow-sm">✔</div> 
+                                Suporte no Discord
+                            </li>
                         </ul>
                     </div>
 
-                    <div class="w-full md:w-1/2 p-8 bg-white flex flex-col justify-center items-center text-center relative">
-                        <div class="relative">
-                            <p class="text-gray-400 font-bold font-marker text-xl relative inline-block">
+                    <!-- Right Price -->
+                    <div class="w-full md:w-1/2 p-10 bg-white flex flex-col justify-center items-center text-center relative">
+                        <!-- Discount Badge -->
+                        <div class="absolute top-4 right-4 bg-red-500 text-white font-comic px-3 py-1 text-xl border-2 border-doodle-dark transform rotate-12 animate-pulse">
+                            -60% OFF
+                        </div>
+
+                        <div class="relative mb-2">
+                            <p class="text-gray-400 font-bold font-marker text-2xl relative inline-block">
                                 R$ 487,99
-                                <span class="absolute top-1/2 left-0 w-full h-1 bg-doodle-pink transform -rotate-6"></span>
+                                <span class="absolute top-1/2 left-0 w-full h-1.5 bg-red-500 transform -rotate-6 rounded-full opacity-80"></span>
                             </p>
                         </div>
                         
-                        <div class="font-comic text-7xl text-doodle-dark my-2 tracking-tight transform -rotate-3">
-                            R$ 197,99
+                        <div class="font-comic text-8xl text-doodle-dark my-2 tracking-tight transform -rotate-3 drop-shadow-sm">
+                            R$ 197<span class="text-5xl">,99</span>
                         </div>
-                        <p class="text-doodle-purple font-marker text-lg mb-8">ou 12x no cartão</p>
+                        <p class="text-doodle-purple font-marker text-xl mb-10 bg-doodle-paper px-4 py-1 border-2 border-doodle-purple rounded-full">ou 12x de R$ 19,70</p>
                         
-                        <button onclick="goToCheckout()" class="btn-doodle w-full bg-doodle-yellow text-doodle-dark font-comic text-3xl py-4 rounded border-2 border-doodle-dark hover:bg-white transition-colors transform hover:-rotate-1 relative group">
-                            COMPRAR AGORA
-                            <span class="absolute -top-4 -right-2 text-doodle-pink text-4xl group-hover:rotate-12 transition-transform">★</span>
+                        <button onclick="goToCheckout()" class="btn-doodle w-full bg-doodle-yellow text-doodle-dark font-comic text-4xl py-5 rounded-xl hover:bg-white transition-all transform hover:-rotate-1 relative group overflow-hidden">
+                            <span class="relative z-10">COMPRAR AGORA</span>
+                            <!-- Shine Effect -->
+                            <div class="absolute top-0 -left-[100%] w-full h-full bg-white/30 skew-x-[45deg] group-hover:left-[100%] transition-all duration-700"></div>
+                            <span class="absolute -top-5 -right-3 text-doodle-pink text-5xl group-hover:rotate-12 transition-transform">★</span>
                         </button>
+                        <p class="text-xs text-gray-400 mt-4 font-bold flex items-center gap-1"><i data-lucide="lock" class="w-3 h-3"></i> Pagamento 100% Seguro</p>
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <footer class="bg-doodle-dark text-white py-12 border-t-4 border-doodle-pink relative overflow-hidden">
+    <!-- FOOTER -->
+    <footer class="bg-doodle-dark text-white py-16 border-t-4 border-doodle-pink relative overflow-hidden">
         <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(#fff 2px, transparent 2px); background-size: 30px 30px;"></div>
-        <div class="max-w-6xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-6 relative z-10">
-            <div class="flex items-center gap-2 font-comic text-3xl">
-                <span>★</span>
+        <div class="max-w-6xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-8 relative z-10">
+            <div class="flex items-center gap-3 font-comic text-4xl">
+                <span class="text-doodle-yellow animate-spin-slow">★</span>
                 AKKO ACADEMY
             </div>
-            <p class="font-marker text-gray-400 text-sm">© 2025. FEITO POR LUCXSEDIITS.</p>
+            
+            <div class="flex gap-6">
+                 <a href="#" class="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-doodle-pink hover:text-white transition-colors"><i data-lucide="instagram"></i></a>
+                 <a href="#" class="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-doodle-pink hover:text-white transition-colors"><i data-lucide="youtube"></i></a>
+                 <a href="#" class="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center hover:bg-doodle-pink hover:text-white transition-colors"><i data-lucide="twitter"></i></a>
+            </div>
+
+            <p class="font-marker text-gray-500 text-sm">© 2025. FEITO POR LUCXSEDIITS.</p>
         </div>
     </footer>
 
-    <div id="login-modal" class="fixed inset-0 z-[100] modal flex items-center justify-center">
+    <!-- LOGIN MODAL -->
+    <div id="login-modal" class="fixed inset-0 z-[100] modal flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-doodle-dark/80 backdrop-blur-sm" onclick="toggleLoginModal()"></div>
-        <div class="modal-content relative bg-doodle-yellow w-full max-w-sm p-8 shadow-[10px_10px_0px_#2D2B38] border-4 border-doodle-dark transform rotate-2">
+        <div class="modal-content relative bg-doodle-yellow w-full max-w-sm p-8 shadow-[15px_15px_0px_#2D2B38] border-4 border-doodle-dark transform rotate-2">
             <div class="tape tape-tc opacity-50 bg-white/50"></div>
-            <button onclick="toggleLoginModal()" class="absolute top-2 right-2 text-doodle-dark hover:scale-110 transition-transform font-bold font-comic text-xl">X</button>
-            <div class="text-center mb-6">
-                <h2 id="auth-title" class="font-comic text-4xl text-doodle-dark mb-2">ÁREA DE MEMBROS</h2>
-                <p class="font-marker text-doodle-dark/70 text-sm leading-tight">
+            <button onclick="toggleLoginModal()" class="absolute top-2 right-2 text-doodle-dark hover:scale-110 transition-transform font-bold font-comic text-xl w-8 h-8 flex items-center justify-center border-2 border-transparent hover:border-doodle-dark rounded-full">X</button>
+            <div class="text-center mb-8">
+                <h2 id="auth-title" class="font-comic text-5xl text-doodle-dark mb-2">ÁREA VIP</h2>
+                <p class="font-marker text-doodle-dark/70 text-sm leading-tight px-4">
                     Utilize o email e a senha enviados para a sua caixa de entrada após a compra.
                 </p>
             </div>
             <form id="auth-form" class="space-y-4" onsubmit="handleLogin(event)">
                 <div>
-                    <label class="block font-comic text-xl text-doodle-dark mb-1">E-MAIL DA COMPRA</label>
-                    <input type="email" id="email" class="w-full bg-white border-2 border-doodle-dark p-2 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow" required>
+                    <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">E-MAIL DA COMPRA</label>
+                    <input type="email" id="email" class="w-full bg-white border-2 border-doodle-dark p-3 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow rounded-lg text-lg" required>
                 </div>
                 <div>
-                    <label class="block font-comic text-xl text-doodle-dark mb-1">SENHA (RECEBIDA)</label>
-                    <input type="password" id="password" class="w-full bg-white border-2 border-doodle-dark p-2 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow" required>
+                    <label class="block font-comic text-xl text-doodle-dark mb-1 ml-1">SENHA (RECEBIDA)</label>
+                    <input type="password" id="password" class="w-full bg-white border-2 border-doodle-dark p-3 font-sans focus:outline-none focus:shadow-[4px_4px_0px_#2D2B38] transition-shadow rounded-lg text-lg" required>
                 </div>
-                <button type="submit" class="btn-doodle w-full bg-doodle-pink text-white font-comic text-2xl py-2 mt-4 border-2 border-doodle-dark hover:bg-doodle-purple">
+                <button type="submit" class="btn-doodle w-full bg-doodle-pink text-white font-comic text-3xl py-3 mt-4 border-2 border-doodle-dark hover:bg-doodle-purple rounded-lg shadow-hard-sm">
                     ENTRAR
                 </button>
             </form>
-            <p id="error-msg" class="text-red-600 font-marker text-center mt-4 hidden bg-white border-2 border-red-600 p-1 transform rotate-1"></p>
-            <div class="text-center mt-4 border-t-2 border-doodle-dark pt-4 border-dashed">
-                <p class="font-sans text-xs text-doodle-dark">Ainda não recebeu? Verifique a caixa de SPAM ou <a href="#" class="underline font-bold">fale com o suporte</a>.</p>
+            <p id="error-msg" class="text-red-600 font-marker text-center mt-6 hidden bg-white border-2 border-red-600 p-2 transform -rotate-1 shadow-sm text-sm"></p>
+            <div class="text-center mt-6 border-t-2 border-doodle-dark pt-4 border-dashed border-black/20">
+                <p class="font-sans text-xs text-doodle-dark font-bold">Ainda não recebeu? Verifique o SPAM.</p>
             </div>
         </div>
     </div>
@@ -493,6 +619,10 @@
             const modal = document.getElementById('login-modal');
             modal.classList.toggle('active');
             document.getElementById('error-msg').classList.add('hidden');
+            // Reset form when opening
+            if(modal.classList.contains('active')) {
+                document.getElementById('auth-form').reset();
+            }
         }
     </script>
 </body>
