@@ -18,10 +18,10 @@ const transporter = nodemailer.createTransport({
 });
 
 // ==================================================================
-// 1. WEBHOOK DE VENDAS (Compatível V1)
+// 1. WEBHOOK DE VENDAS (Cria o aluno quando a venda é aprovada)
 // ==================================================================
 exports.handleNewSale = functions.https.onRequest(async (req, res) => {
-    // Habilitar CORS manualmente para garantir que funcione em qualquer lugar
+    // CORS manual para evitar bloqueios
     res.set('Access-Control-Allow-Origin', '*');
     if (req.method === 'OPTIONS') {
         res.set('Access-Control-Allow-Methods', 'POST');
@@ -32,15 +32,17 @@ exports.handleNewSale = functions.https.onRequest(async (req, res) => {
 
     try {
         const data = req.body;
+        // Pega dados de diferentes padrões de payload (Hotmart, Cakto, etc)
         const email = data.email || data.client?.email || data.buyer_email;
         const name = data.name || data.client?.name || data.buyer_name;
         const status = data.status || data.transaction_status || data.event; 
 
         console.log("Webhook recebido:", JSON.stringify(data));
 
+        // Ignora status de falha/reembolso
         const invalidStatuses = ['refused', 'refunded', 'chargedback', 'canceled'];
         if (status && invalidStatuses.includes(status)) {
-            return res.status(200).send("Status não aprovado.");
+            return res.status(200).send("Status ignorado.");
         }
 
         if (!email) return res.status(400).send("Email não encontrado.");
@@ -51,6 +53,7 @@ exports.handleNewSale = functions.https.onRequest(async (req, res) => {
         let isNewUser = false;
         let passwordUsed = null;
 
+        // Tenta achar o usuário ou cria um novo
         try {
             userRecord = await admin.auth().getUserByEmail(email);
         } catch (e) {
@@ -67,6 +70,7 @@ exports.handleNewSale = functions.https.onRequest(async (req, res) => {
             }
         }
 
+        // Grava no Firestore para aparecer no Painel Admin
         await db.collection('artifacts').doc(DEFAULT_APP_ID)
             .collection('public').doc('data')
             .collection('students').doc(userRecord.uid).set({
@@ -78,6 +82,7 @@ exports.handleNewSale = functions.https.onRequest(async (req, res) => {
                 productId: data.product_id || 'unknown'
             }, { merge: true });
 
+        // Envia email com senha apenas se for novo usuário
         if (isNewUser && passwordUsed) {
             await sendWelcomeEmail(email, passwordUsed);
         }
@@ -91,10 +96,9 @@ exports.handleNewSale = functions.https.onRequest(async (req, res) => {
 });
 
 // ==================================================================
-// 2. FUNÇÃO DELETAR (Compatível V1)
+// 2. FUNÇÃO DELETAR (Chamada pelo botão de lixeira no Admin)
 // ==================================================================
 exports.deleteStudent = functions.https.onCall(async (data, context) => {
-    // Em V1, 'data' são os dados enviados e 'context' tem a autenticação
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Precisa estar logado.');
     }
@@ -103,26 +107,29 @@ exports.deleteStudent = functions.https.onCall(async (data, context) => {
     const appId = data.appId || DEFAULT_APP_ID;
 
     try {
+        // Tenta deletar login
         await admin.auth().deleteUser(targetUid);
         
+        // Deleta dados da lista
         await db.collection("artifacts").doc(appId)
             .collection("public").doc("data")
             .collection("students").doc(targetUid).delete();
 
         return { success: true, message: "Aluno deletado!" };
     } catch (error) {
+        // Se o login já não existia, deleta só da lista
         if (error.code === 'auth/user-not-found') {
              await db.collection("artifacts").doc(appId)
                 .collection("public").doc("data")
                 .collection("students").doc(targetUid).delete();
-             return { success: true, message: "Apenas removido da lista (login não existia)." };
+             return { success: true, message: "Removido da lista (login não existia)." };
         }
         throw new functions.https.HttpsError('internal', error.message);
     }
 });
 
 // ==================================================================
-// 3. SINCRONIZAR (Compatível V1)
+// 3. SINCRONIZAR (Botão "Sincronizar Auth" no Admin)
 // ==================================================================
 exports.syncAuthToFirestore = functions.https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Logue como admin.');
@@ -131,6 +138,7 @@ exports.syncAuthToFirestore = functions.https.onCall(async (data, context) => {
     const collectionRef = db.collection("artifacts").doc(appId)
         .collection("public").doc("data").collection("students");
 
+    // Pega últimos 1000 usuários
     const listUsersResult = await admin.auth().listUsers(1000);
     const batch = db.batch();
     let count = 0;
@@ -139,6 +147,7 @@ exports.syncAuthToFirestore = functions.https.onCall(async (data, context) => {
         const docRef = collectionRef.doc(user.uid);
         const docSnap = await docRef.get();
 
+        // Se não está na lista, adiciona
         if (!docSnap.exists) {
             batch.set(docRef, {
                 uid: user.uid,
@@ -153,27 +162,6 @@ exports.syncAuthToFirestore = functions.https.onCall(async (data, context) => {
 
     if (count > 0) await batch.commit();
     return { success: true, message: `${count} usuários sincronizados!` };
-});
-
-// ==================================================================
-// 4. GATILHO AUTOMÁTICO (Compatível V1)
-// ==================================================================
-exports.onUserCreatedTrigger = functions.auth.user().onCreate(async (user) => {
-    const appId = DEFAULT_APP_ID;
-    const docRef = db.collection("artifacts").doc(appId)
-        .collection("public").doc("data")
-        .collection("students").doc(user.uid);
-
-    const docSnap = await docRef.get();
-    
-    if (!docSnap.exists) {
-        await docRef.set({
-            uid: user.uid,
-            email: user.email,
-            name: user.displayName || "Novo Aluno (Via Console)",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-    }
 });
 
 // ==================================================================
